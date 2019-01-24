@@ -89,9 +89,7 @@ pub fn delete_wallet(wallet_name: &str, wallet_type: Option<&str>, storage_confi
 
     let config = settings::get_wallet_config(wallet_name, wallet_type, storage_config);
 
-    let credentials = settings::get_wallet_credentials(storage_creds);
-
-    wallet::delete_wallet(&config,&settings::get_wallet_credentials()).wait().map_err(map_rust_indy_sdk_error)
+    wallet::delete_wallet(&config,&settings::get_wallet_credentials(storage_creds)).wait().map_err(map_rust_indy_sdk_error)
 }
 
 pub fn add_record(xtype: &str, id: &str, value: &str, tags: Option<&str>) -> Result<(), u32> {
