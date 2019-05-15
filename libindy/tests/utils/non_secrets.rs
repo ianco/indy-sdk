@@ -5,6 +5,7 @@ use self::futures::Future;
 use serde_json;
 
 use indy::wallet;
+use utils;
 use utils::{test};
 use utils::constants::WALLET_CREDENTIALS;
 use utils::types::WalletRecord;
@@ -126,8 +127,8 @@ pub fn populate_wallet_for_search() {
         test::cleanup_storage();
 
         //1. Create and Open wallet
-        wallet::create_wallet(SEARCH_COMMON_WALLET_CONFIG, WALLET_CREDENTIALS).wait().unwrap();
-        let wallet_handle = wallet::open_wallet(SEARCH_COMMON_WALLET_CONFIG, WALLET_CREDENTIALS).wait().unwrap();
+        utils::wallet::create_wallet(SEARCH_COMMON_WALLET_CONFIG, WALLET_CREDENTIALS).unwrap();
+        let wallet_handle = utils::wallet::open_wallet(SEARCH_COMMON_WALLET_CONFIG, WALLET_CREDENTIALS).unwrap();
 
         let record_1 = record_1();
         add_wallet_record(wallet_handle,

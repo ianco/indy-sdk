@@ -81,11 +81,15 @@ pub fn register_wallet_storage(xtype: &str, force_create: bool) -> Result<(), Er
 }
 
 pub fn create_wallet(config: &str, credentials: &str) -> Result<(), IndyError> {
-    wallet::create_wallet(config, credentials).wait()
+    let (config, credentials) = override_wallet_config_creds(config, credentials, true);
+
+    wallet::create_wallet(&config, &credentials).wait()
 }
 
 pub fn open_wallet(config: &str, credentials: &str) -> Result<i32, IndyError> {
-    wallet::open_wallet(config, credentials).wait()
+    let (config, credentials) = override_wallet_config_creds(config, credentials, false);
+
+    wallet::open_wallet(&config, &credentials).wait()
 }
 
 pub fn create_and_open_wallet(storage_type: Option<&str>) -> Result<i32, IndyError> {
@@ -120,11 +124,27 @@ pub fn create_and_open_plugged_wallet() -> Result<i32, IndyError> {
 }
 
 pub fn delete_wallet(config: &str, credentials: &str) -> Result<(), IndyError> {
-    wallet::delete_wallet(config, credentials).wait()
+    let (config, credentials) = override_wallet_config_creds(config, credentials, false);
+
+    wallet::delete_wallet(&config, &credentials).wait()
 }
 
 pub fn close_wallet(wallet_handle: i32) -> Result<(), IndyError> {
     wallet::close_wallet(wallet_handle).wait()
+}
+
+/* 
+ * Wrapper to ensure a wallet is closed when it goes out of scope
+ * (i.e. if the unit test didn't shut down cleanly)
+ */
+pub struct WalletHandleWrapper {
+    pub handle: i32,
+}
+impl ::std::ops::Drop for WalletHandleWrapper {
+    fn drop(&mut self) {
+        // close wallet; ignore result in case we are closing it twice
+        let _res = close_wallet(self.handle);
+    }
 }
 
 pub fn export_wallet(wallet_handle: i32, export_config_json: &str) -> Result<(), IndyError> {
@@ -267,19 +287,101 @@ pub type ResponseEmptyCB = extern fn(xcommand_handle: i32, err: i32);
 
 
 /*
+ * Update wallet config based on supplied configuration,
+ *     *only if* "storage_type" is not already provided.
+ */
+pub fn override_wallet_config_creds(config: &str, credentials: &str, load_dynalib: bool) -> (String, String) {
+    // if storge_type is explicit then bail
+    let result: serde_json::Result<Config> = serde_json::from_str(config);
+
+    match result {
+        Ok(check_config) => {
+            if let Some(_) = check_config.storage_type {
+                return (config.to_owned(), credentials.to_owned());
+            }
+
+            // check for default configs for postgres plugin
+            let env_var = "STG_USE";
+            let storage_config = match env::var(env_var) {
+                Ok(var) => {
+                    match var.to_lowercase().as_ref() {
+                        "postgres" => postgres_lib_test_overrides(),
+                        _ => wallet_storage_overrides()
+                    }
+                },
+                Err(_) => wallet_storage_overrides()
+            };
+
+            // if no config is provided at all then bail
+            if !any_overrides(&storage_config) {
+                return (config.to_owned(), credentials.to_owned());
+            }
+
+            // load dynamic library if requested
+            if load_dynalib {
+                // TODO ignore error (for now)
+                let _ = load_storage_library_config(&storage_config); //.unwrap();
+            }
+
+            // update config and credentials
+            let config = override_wallet_configuration(config, &storage_config);
+            let credentials = override_wallet_credentials(credentials, &storage_config);
+
+            return (config, credentials);
+        },
+        Err(_) => {
+            return (config.to_owned(), credentials.to_owned());
+        }
+    }
+}
+
+/*
+ * Dynamically loads the specified library and registers storage, based on provided config
+ */
+pub fn load_storage_library_config(storage_config: &HashMap<String, Option<String>>) -> Result<(), ()> {
+    match storage_config.get("STG_LIB") {
+        Some(slibrary) => match slibrary {
+            Some(library) => {
+                let stg_type: String = match storage_config.get("STG_TYPE") {
+                    Some(styp) => match styp {
+                        Some(typ) => typ.clone(),
+                        None => "".to_string()
+                    },
+                    None => "".to_string()
+                };
+                let initializer: String = match storage_config.get("STG_INIT") {
+                    Some(spfx) => match spfx {
+                        Some(pfx) => pfx.clone(),
+                        None => "".to_string()
+                    },
+                    None => "".to_string()
+                };
+                load_storage_library(&stg_type[..], &library[..], &initializer[..])
+            },
+            None => Ok(())
+        },
+        None => Ok(())
+    }
+}
+
+/*
  * Dynamically loads the specified library and registers storage
  */
 pub fn load_storage_library(_stg_type: &str, library: &str, initializer: &str) -> Result<(), ()> {
     println!("Loading {} {} {}", _stg_type, library, initializer);
-    let lib = _load_lib(library).unwrap();
+    let lib_res = _load_lib(library);
+    match lib_res {
+        Ok(lib) => {
+            unsafe {
+                let init_func: libloading::Symbol<unsafe extern fn() -> ErrorCode> = lib.get(initializer.as_bytes()).unwrap();
 
-    unsafe {
-        let init_func: libloading::Symbol<unsafe extern fn() -> ErrorCode> = lib.get(initializer.as_bytes()).unwrap();
-
-        match init_func() {
-            ErrorCode::Success => println!("Plugin has been loaded: \"{}\"", library),
-            _ => return Err(println!("Plugin has not been loaded: \"{}\"", library))
-        }
+                match init_func() {
+                    ErrorCode::Success => println!("Plugin has been loaded: \"{}\"", library),
+                    _ => return Err(println!("Plugin has not been loaded: \"{}\"", library))
+                }
+            }
+        },
+        Err(_) => return Err(println!("Plugin has not been loaded: \"{}\"", library))
     }
 
     Ok(())

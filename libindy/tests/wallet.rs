@@ -30,6 +30,8 @@ mod utils;
 use utils::inmem_wallet::InmemWallet;
 use utils::{environment, wallet, test, did};
 use utils::constants::*;
+use std::collections::hash_map::HashMap;
+use std::env;
 
 use self::indy::ErrorCode;
 
@@ -766,8 +768,27 @@ mod medium_cases {
         }
     }
 
-    mod register_wallet_storage_type {
+    mod dynamic_wallet_storage_type {
         use super::*;
+
+        fn save_config_overrides() -> HashMap<String, Option<String>> {
+            // save (and clear) existing vars
+            let hs_keep = utils::wallet::wallet_storage_overrides();
+            for (key, _val) in hs_keep.iter() {
+                env::remove_var(key);
+            }
+            hs_keep
+        }
+
+        fn restore_config_overrides(hs_keep: HashMap<String, Option<String>>) {
+            // restore original vars
+            for (key, val) in hs_keep.iter() {
+                match val {
+                    Some(hval) => env::set_var(key, hval),
+                    None => ()
+                }
+            }
+        }
 
         #[test]
         fn indy_register_storage_plugin_library() {
@@ -783,6 +804,38 @@ mod medium_cases {
             let postgres_overrides = wallet::postgres_lib_test_overrides();
             let new_config = wallet::override_wallet_configuration(&wallet_config, &postgres_overrides);
             let new_creds = wallet::override_wallet_credentials(&wallet_creds, &postgres_overrides);
+
+            // run through some wallet CRUD
+            wallet::create_wallet(&new_config, &new_creds).unwrap();
+            let wallet_handle = wallet::open_wallet(&new_config, &new_creds).unwrap();
+            did::create_my_did(wallet_handle, "{}").unwrap();
+            wallet::close_wallet(wallet_handle).unwrap();
+            wallet::delete_wallet(&new_config, &new_creds).unwrap();
+        }
+
+        #[test]
+        fn indy_storage_plugin_library_via_env() {
+            let hs_keep = save_config_overrides();
+            
+            let stg_config = r#"{"url":"localhost:5432"}"#;
+            let stg_creds = r#"{"account":"postgres","password":"mysecretpassword","admin_account":"postgres","admin_password":"mysecretpassword"}"#;
+            let stg_type = "postgres_storage";
+            let stg_lib = wallet::get_postgres_storage_plugin();
+            let stg_init = "postgresstorage_init";
+
+            env::set_var("STG_TYPE", stg_type);
+            env::set_var("STG_CONFIG", stg_config);
+            env::set_var("STG_CREDS", stg_creds);
+            env::set_var("STG_LIB", stg_lib);
+            env::set_var("STG_INIT", stg_init);
+
+            // setup cofiguration for a postgres wallet
+            let wallet_config = "{\"id\": \"wallet_2\"}";
+            let wallet_creds = "{\"key\": \"8dvfYSt5d1taSd6yJdpjq4emkwsPDDLYxkNFysFD2cZY\", \"key_derivation_method\": \"RAW\"}";
+            let (new_config, new_creds) = wallet::override_wallet_config_creds(wallet_config, wallet_creds, true);
+
+            // restore now just in case anything bombs
+            restore_config_overrides(hs_keep);
 
             // run through some wallet CRUD
             wallet::create_wallet(&new_config, &new_creds).unwrap();
