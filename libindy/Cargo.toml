@@ -96,6 +96,8 @@ criterion = "0.2"
 indy = { path = "../wrappers/rust" }
 indy-sys = { path = "../wrappers/rust/indy-sys" }
 futures = "0.1.24"
+libloading = "0.5.0"
+os_type="1.0.0"
 
 [[bench]]
 name = "wallet"

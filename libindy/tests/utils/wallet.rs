@@ -1,7 +1,10 @@
 extern crate futures;
 extern crate libc;
+extern crate libloading;
+extern crate os_type;
 
 use serde_json;
+use serde_json::Value;
 
 use indy::{ErrorCode, IndyError};
 use indy::wallet;
@@ -10,8 +13,12 @@ use self::futures::Future;
 
 use utils::{callback, sequence, environment};
 use utils::inmem_wallet::InmemWallet;
+use utils::domain::wallet::Credentials;
+use utils::domain::wallet::Config;
 
 use std::collections::HashSet;
+use std::collections::hash_map::HashMap;
+use std::env;
 use std::sync::Mutex;
 use std::ffi::CString;
 use self::libc::c_char;
@@ -257,3 +264,140 @@ pub type WalletFreeSearch = extern fn(storage_handle: i32,
                                       search_handle: i32) -> ErrorCode;
 
 pub type ResponseEmptyCB = extern fn(xcommand_handle: i32, err: i32);
+
+
+/*
+ * Dynamically loads the specified library and registers storage
+ */
+pub fn load_storage_library(_stg_type: &str, library: &str, initializer: &str) -> Result<(), ()> {
+    println!("Loading {} {} {}", _stg_type, library, initializer);
+    let lib = _load_lib(library).unwrap();
+
+    unsafe {
+        let init_func: libloading::Symbol<unsafe extern fn() -> ErrorCode> = lib.get(initializer.as_bytes()).unwrap();
+
+        match init_func() {
+            ErrorCode::Success => println!("Plugin has been loaded: \"{}\"", library),
+            _ => return Err(println!("Plugin has not been loaded: \"{}\"", library))
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(any(unix))]
+fn _load_lib(library: &str) -> libloading::Result<libloading::Library> {
+    libloading::os::unix::Library::open(Some(library), self::libc::RTLD_NOW | self::libc::RTLD_NODELETE)
+        .map(libloading::Library::from)
+}
+
+#[cfg(any(not(unix)))]
+fn _load_lib(library: &str) -> libloading::Result<libloading::Library> {
+    libloading::Library::new(library)
+}
+
+/*
+ * Update the given configuration string based on supplied overrides
+ */
+pub fn override_wallet_configuration(config: &str, overrides: &HashMap<String, Option<String>>) -> String {
+    let mut config: Config = serde_json::from_str(config).unwrap();
+
+    match overrides.get("STG_TYPE") {
+        Some(stype) => match stype {
+            Some(wtype) => {
+                config.storage_type = Some(wtype.clone());
+            },
+            None => ()
+        },
+        None => ()
+    }
+    match overrides.get("STG_CONFIG") {
+        Some(sconfig) => match sconfig {
+            Some(wconfig) => {
+                let v: Value = serde_json::from_str(&wconfig[..]).unwrap();
+                config.storage_config = Some(v.clone());
+            },
+            None => ()
+        },
+        None => ()
+    }
+
+    serde_json::to_string(&config).unwrap()
+}
+
+/*
+ * Update the given credentials string based on supplied overrides
+ */
+pub fn override_wallet_credentials(creds: &str, overrides: &HashMap<String, Option<String>>) -> String {
+    let mut creds: Credentials = serde_json::from_str(creds).unwrap();
+
+    match overrides.get("STG_CREDS") {
+        Some(screds) => match screds {
+            Some(wcreds) => {
+                let v: Value = serde_json::from_str(&wcreds[..]).unwrap();
+                creds.storage_credentials = Some(v.clone());
+            },
+            None => ()
+        },
+        None => ()
+    }
+
+    serde_json::to_string(&creds).unwrap()
+}
+
+/*
+ * Returns wallet storage configuation dynamically configured via environment variables:
+ * STG_CONFIG - json configuration string to pass to the wallet on creation and open
+ * STG_CREDS - json credentials string to pass to the wallet on creation and open
+ * STG_TYPE - storage type to create (must match type in library)
+ * STG_LIB - c-callable library to load (contains a plug-in storage)
+ *         - if specified will dynamically load and register a wallet storage
+ * STG_INIT - library initializer function to call
+ */
+pub fn wallet_storage_overrides() -> HashMap<String, Option<String>> {
+    let mut storage_config = HashMap::new();
+    let env_vars = vec!["STG_CONFIG", "STG_CREDS", "STG_TYPE", "STG_LIB", "STG_INIT"];
+
+    for env_var in env_vars.iter() {
+        match env::var(env_var) {
+            Ok(var) => storage_config.insert(env_var.to_string(), Some(var.to_string())),
+            Err(_) => storage_config.insert(env_var.to_string(), None)
+        };
+    }
+
+    storage_config
+}
+
+pub fn any_overrides(storage_config: &HashMap<String, Option<String>>) -> bool {
+    for (_key, val) in storage_config {
+        if let Some(_) = val {
+            return true;
+        }
+    }
+    return false;
+}
+
+pub fn get_postgres_storage_plugin()  -> String {
+    let os = os_type::current_platform();
+    let osfile = match os.os_type {
+        os_type::OSType::OSX => "libindystrgpostgres.dylib",
+        os_type::OSType::Unknown => "libindystrgpostgres.dll",
+        _ => "libindystrgpostgres.so"
+    };
+    return osfile.to_owned();
+}
+
+pub fn postgres_lib_test_overrides() -> HashMap<String, Option<String>> {
+    // Note - libraries be in the directories in LD_LIBRARY_PATH, e.g.:
+    //      export LD_LIBRARY_PATH=../samples/storage/storage-inmem/target/debug/:./target/debug/
+    let osfile = get_postgres_storage_plugin();
+
+    let mut storage_config = HashMap::new();
+    let env_vars = vec!["STG_CONFIG", "STG_CREDS", "STG_TYPE", "STG_LIB", "STG_INIT"];
+    storage_config.insert(env_vars[0].to_string(), Some(r#"{"url":"localhost:5432"}"#.to_string()));
+    storage_config.insert(env_vars[1].to_string(), Some(r#"{"account":"postgres","password":"mysecretpassword","admin_account":"postgres","admin_password":"mysecretpassword"}"#.to_string()));
+    storage_config.insert(env_vars[2].to_string(), Some("postgres_storage".to_string()));
+    storage_config.insert(env_vars[3].to_string(), Some(osfile.to_string()));
+    storage_config.insert(env_vars[4].to_string(), Some("postgresstorage_init".to_string()));
+    storage_config
+}
