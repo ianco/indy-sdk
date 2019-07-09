@@ -11,6 +11,7 @@ pub mod payments;
 pub mod pool;
 pub mod wallet;
 pub mod logger;
+pub mod cache;
 
 use self::libc::{c_void, c_char};
 
@@ -39,6 +40,9 @@ pub type Timeout = i32;
 pub type TailsWriterHandle = i32;
 
 pub type Error = i32;
+
+pub const INVALID_POOL_HANDLE: PoolHandle = 0;
+pub const INVALID_WALLET_HANDLE: WalletHandle = 0;
 
 pub type ResponseEmptyCB = extern fn(xcommand_handle: CommandHandle, err: Error);
 pub type ResponseBoolCB = extern fn(xcommand_handle: CommandHandle, err: Error, bool1: bool);

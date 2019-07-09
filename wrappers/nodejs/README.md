@@ -20,6 +20,7 @@ Native bindings for [Hyperledger Indy](https://www.hyperledger.org/projects/hype
   * [pool](#pool)
   * [wallet](#wallet)
   * [logger](#logger)
+  * [cache](#cache)
   * [mod](#mod)
 - [Advanced](#advanced)
 - [Contributing](#contributing)
@@ -100,6 +101,10 @@ Collecting of backtrace can be enabled by:
 
 ### anoncreds
 
+These functions wrap the Ursa algorithm as documented in this [paper](https://github.com/hyperledger/ursa/blob/master/libursa/docs/AnonCred.pdf):
+
+And is documented in this [HIPE](https://github.com/hyperledger/indy-hipe/blob/c761c583b1e01c1e9d3ceda2b03b35336fdc8cc1/text/anoncreds-protocol/README.md):
+
 #### issuerCreateSchema \( issuerDid, name, version, attrNames \) -&gt; \[ id, schema \]
 
 Create credential schema entity that describes credential attributes list and allows credentials
@@ -137,7 +142,11 @@ It is IMPORTANT for current version GET Schema from Ledger with correct seq\_no 
 * `schema`: Json - credential schema as a json
 * `tag`: String - allows to distinct between credential definitions for the same issuer and schema
 * `signatureType`: String - credential definition type \(optional, 'CL' by default\) that defines credentials signature and revocation math. Supported types are:
-  *  'CL': Camenisch-Lysyanskaya credential signature type
+  *  'CL': Camenisch-Lysyanskaya credential signature type that is implemented according to the algorithm in this paper:
+                https://github.com/hyperledger/ursa/blob/master/libursa/docs/AnonCred.pdf
+           And is documented in this HIPE:
+               https://github.com/hyperledger/indy-hipe/blob/c761c583b1e01c1e9d3ceda2b03b35336fdc8cc1/text/anoncreds-protocol/README.md
+
 * `config`: Json - \(optional\) type-specific configuration of credential definition as json:
   *  'CL':
     *  support\_revocation: whether to request non-revocation credential \(optional, default false\)
@@ -168,7 +177,9 @@ This call requires access to pre-configured blob storage writer instance handle 
 * `wh`: Handle (Number) - wallet handle (created by openWallet)
 * `issuerDid`: String - a DID of the issuer signing transaction to the Ledger
 * `revocDefType`: String - revocation registry type \(optional, default value depends on credential definition type\). Supported types are:
-  *  'CL\_ACCUM': Type-3 pairing based accumulator. Default for 'CL' credential definition type
+  *  'CL\_ACCUM': Type-3 pairing based accumulator implemented according to the algorithm in this paper:
+                    https://github.com/hyperledger/ursa/blob/master/libursa/docs/AnonCred.pdf
+                  This type is default for 'CL' credential definition type.
 * `tag`: String - allows to distinct between revocation registries for the same issuer and credential definition
 * `credDefId`: String - id of stored in ledger credential definition
 * `config`: Json - type-specific configuration of revocation registry as json:
@@ -204,7 +215,9 @@ for authentication between protocol steps and integrity checking.
         "cred_def_id": string,
         // Fields below can depend on Cred Def type
         "nonce": string,
-        "key_correctness_proof" : <key_correctness_proof>
+        "key_correctness_proof" : key correctness proof for credential definition correspondent to cred_def_id
+                                  (opaque type that contains data structures internal to Ursa.
+                                  It should not be parsed and are likely to change in future versions).
     }
 ````
 
@@ -244,8 +257,12 @@ Example:
         "rev_reg_def_id", Optional<string>,
         "values": <see cred_values_json above>,
         // Fields below can depend on Cred Def type
-        "signature": <signature>,
+        "signature": <credential signature>,
+                     (opaque type that contains data structures internal to Ursa.
+                     It should not be parsed and are likely to change in future versions).
         "signature_correctness_proof": <signature_correctness_proof>
+                                       (opaque type that contains data structures internal to Ursa.
+                                        It should not be parsed and are likely to change in future versions).
     }
 cred_revoc_id: local id for revocation info (Can be used for revocation of this credential)
 revoc_reg_delta_json: Revocation registry delta json with a newly issued credential
@@ -313,7 +330,11 @@ The blinded master secret is a part of the credential request.
      "cred_def_id" : string,
         // Fields below can depend on Cred Def type
      "blinded_ms" : <blinded_master_secret>,
+                   (opaque type that contains data structures internal to Ursa.
+                    It should not be parsed and are likely to change in future versions).
      "blinded_ms_correctness_proof" : <blinded_ms_correctness_proof>,
+                                       (opaque type that contains data structures internal to Ursa.
+                                        It should not be parsed and are likely to change in future versions).
      "nonce": string
    }
 cred_req_metadata_json: Credential request metadata json for further processing of received form Issuer credential.
@@ -680,7 +701,8 @@ There is also aggregated proof part common for all credential proofs.
         "proof": {
             "proofs": [ <credential_proof>, <credential_proof>, <credential_proof> ],
             "aggregated_proof": <aggregated_proof>
-        }
+        } (opaque type that contains data structures internal to Ursa.
+            It should not be parsed and are likely to change in future versions).
         "identifiers": [{schema_id, cred_def_id, Optional<rev_reg_id>, Optional<timestamp>}]
     }
 ````
@@ -1785,6 +1807,34 @@ More about AUTH_RULE request: https://github.com/hyperledger/indy-node/blob/mast
 
 Errors: `Common*`
 
+#### buildAuthRulesRequest \( submitterDid, data \) -&gt; request
+
+Builds a AUTH_RULES request. Request to change multiple authentication rules for a ledger transaction.
+
+* `submitterDid`: String - \(Optional\) DID of the read request sender \(if not provided then default Libindy DID will be used\).
+* `constraint`: Json - a list of auth rules:
+```
+[
+    {
+        "auth_type": ledger transaction alias or associated value,
+        "auth_action": type of an action,
+        "field": transaction field,
+        "old_value": (Optional) old value of a field, which can be changed to a new_value (mandatory for EDIT action),
+        "new_value": (Optional) new value that can be used to fill the field,
+        "constraint": set of constraints required for execution of an action in the format described above for `buildAuthRuleRequest` function.
+    },
+    ...
+]
+```
+
+Default ledger auth rules: https://github.com/hyperledger/indy-node/blob/master/docs/source/auth_rules.md
+
+More about AUTH_RULE request: https://github.com/hyperledger/indy-node/blob/master/docs/source/requests.md#auth_rules   
+
+* __->__ `request`: Json
+
+Errors: `Common*`
+
 
 #### buildGetAuthRuleRequest \( submitterDid, txnType, action, field, oldValue, newValue \) -&gt; request
 
@@ -1844,10 +1894,10 @@ Null data or empty JSON are acceptable here. In this case, ledger will return th
 
 Errors: `Common*`
 
-#### buildAcceptanceMechanismRequest \( submitterDid, aml, amlContext \) -&gt; request
+#### buildAcceptanceMechanismsRequest \( submitterDid, aml, version, amlContext \) -&gt; request
 
 Builds a SET_TXN_AUTHR_AGRMT_AML request. 
-Request to add a new acceptance mechanism for transaction author agreement.
+Request to add a new list of acceptance mechanisms for transaction author agreement.
 Acceptance Mechanism is a description of the ways how the user may accept a transaction author agreement.
 
 EXPERIMENTAL
@@ -1861,21 +1911,25 @@ EXPERIMENTAL
   ...
 }
 ```
+* `version`: String - a version of new acceptance mechanisms. (Note: unique on the Ledger).
 * `amlContext`: String - \(Optional\) common context information about acceptance mechanisms (may be a URL to external resource).
 
 * __->__ `request`: Json
 
 Errors: `Common*`
 
-#### buildGetAcceptanceMechanismRequest \( submitterDid, timestamp \) -&gt; request
+#### buildGetAcceptanceMechanismsRequest \( submitterDid, timestamp \) -&gt; request
 
 Builds a GET_TXN_AUTHR_AGRMT_AML request. 
-Request to get acceptance mechanisms from the ledger valid for specified time or the latest one.
+Request to get a list of  acceptance mechanisms from the ledger valid for specified time or the latest one.
 
 EXPERIMENTAL
 
 * `submitterDid`: String - \(Optional\) DID of the read request sender \(if not provided then default Libindy DID will be used\).
 * `timestamp`: Timestamp (Number) - \(Optional\) time to get an active acceptance mechanisms. The latest one will be returned for null.
+* `version`: Timestamp (String) - \(Optional\) version of acceptance mechanisms.
+
+NOTE: timestamp and version cannot be specified together.
 
 * __->__ `request`: Json
 
@@ -2793,6 +2847,116 @@ indy.setLogger(function (level, target, message, modulePath, file, line) {
 Errors: `Common*`
 
 NOTE: This is a synchronous function (does not return a promise) but may call `logFn` asynchronously many times.
+
+### cache
+
+#### getSchema \( poolHandle, wh, submitterDid, id, options \) -&gt; schema
+
+Get schema json data for specified schema id.
+If data is present inside of cache, cached data is returned.
+Otherwise data is fetched from the ledger and stored inside of cache for future use.
+
+EXPERIMENTAL
+
+* `poolHandle`:
+* `wh`: Handle (Number) - wallet handle (created by openWallet)
+* `submitterDid`: String - DID of the read request sender.
+* `id`: String - Schema ID in ledger
+* `options`: Json
+```
+ {
+    noCache: (bool, optional, false by default) Skip usage of cache,
+    noUpdate: (bool, optional, false by default) Use only cached data, do not try to update.
+    noStore: (bool, optional, false by default) Skip storing fresh data if updated,
+    minFresh: (int, optional, -1 by default) Return cached data if not older than this many seconds. -1 means do not check age.
+ }
+
+```
+__->__ schema: Json
+```
+{
+    id: identifier of schema
+    attrNames: array of attribute name strings
+    name: Schema's name string
+    version: Schema's version string
+    ver: Version of the Schema json
+}
+```
+
+Errors: `Common*`, `Wallet*`, `Ledger*`
+
+#### getCredDef \( poolHandle, wh, submitterDid, id, options \) -&gt; credDef
+
+EXPERIMENTAL
+
+Get credential definition json data for specified credential definition id.
+If data is present inside of cache, cached data is returned.
+Otherwise data is fetched from the ledger and stored inside of cache for future use.
+
+* `poolHandle`:
+* `wh`: Handle (Number) - wallet handle (created by openWallet)
+* `submitterDid`: String - DID of the read request sender.
+* `id`: String - Credential Definition ID in ledger.
+* `options`: Json
+```
+ {
+    noCache: (bool, optional, false by default) Skip usage of cache,
+    noUpdate: (bool, optional, false by default) Use only cached data, do not try to update.
+    noStore: (bool, optional, false by default) Skip storing fresh data if updated,
+    minFresh: (int, optional, -1 by default) Return cached data if not older than this many seconds. -1 means do not check age.
+ }
+
+```
+__->__ credDef: Json
+```
+{
+    id: string - identifier of credential definition
+    schemaId: string - identifier of stored in ledger schema
+    type: string - type of the credential definition. CL is the only supported type now.
+    tag: string - allows to distinct between credential definitions for the same issuer and schema
+    value: Dictionary with Credential Definition's data: {
+        primary: primary credential public key,
+        Optional<revocation>: revocation credential public key
+    },
+    ver: Version of the Credential Definition json
+}
+```
+
+Errors: `Common*`, `Wallet*`, `Ledger*`
+
+#### purgeSchemaCache \( wh, options \) -&gt; void
+
+Purge schema cache.
+
+EXPERIMENTAL
+
+* `wh`: Handle (Number) - wallet handle (created by openWallet)
+* `options`: Json
+```
+ {
+   maxAge: (int, optional, -1 by default) Purge cached data if older than this many seconds. -1 means purge all.
+ }
+```
+* __->__ void
+
+Errors: `Common*`, `Wallet*`
+
+#### purgeCredDefCache \( wh, options \) -&gt; void
+
+Purge credential definition cache.
+
+EXPERIMENTAL
+
+* `wh`: Handle (Number) - wallet handle (created by openWallet)
+* `options`: Json
+```
+ {
+   maxAge: (int, optional, -1 by default) Purge cached data if older than this many seconds. -1 means purge all.
+ }
+```
+* __->__ void
+
+Errors: `Common*`, `Wallet*`
 
 ### mod
 

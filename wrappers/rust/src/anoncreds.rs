@@ -15,8 +15,17 @@ use ffi::{ResponseStringStringCB,
           ResponseI32CB,
           ResponseEmptyCB,
           ResponseBoolCB};
-use ffi::{CommandHandle, WalletHandle, SearchHandle, BlobStorageReaderHandle, TailsWriterHandle};
+use {CommandHandle, WalletHandle, SearchHandle, BlobStorageReaderHandle, TailsWriterHandle};
 use ffi::BlobStorageReaderCfgHandle;
+
+/*
+These functions wrap the Ursa algorithm as documented in this paper:
+https://github.com/hyperledger/ursa/blob/master/libursa/docs/AnonCred.pdf
+
+And is documented in this HIPE:
+https://github.com/hyperledger/indy-hipe/blob/c761c583b1e01c1e9d3ceda2b03b35336fdc8cc1/text/anoncreds-protocol/README.md
+*/
+
 
 /// Create credential schema entity that describes credential attributes list and allows credentials
 /// interoperability.
@@ -53,7 +62,7 @@ fn _issuer_create_schema(command_handle: CommandHandle, issuer_did: &str, name: 
     let attrs = c_str!(attrs);
 
     ErrorCode::from(unsafe {
-      anoncreds::indy_issuer_create_schema(command_handle, issuer_did.as_ptr(), name.as_ptr(), version.as_ptr(), attrs.as_ptr(), cb)
+        anoncreds::indy_issuer_create_schema(command_handle, issuer_did.as_ptr(), name.as_ptr(), version.as_ptr(), attrs.as_ptr(), cb)
     })
 }
 
@@ -67,12 +76,15 @@ fn _issuer_create_schema(command_handle: CommandHandle, issuer_did: &str, name: 
 /// It is IMPORTANT for current version GET Schema from Ledger with correct seq_no to save compatibility with Ledger.
 ///
 /// # Arguments
-/// * `wallet_handle`: wallet handler (created by Wallet::open_wallet).
+/// * `wallet_handle`: wallet handle (created by Wallet::open_wallet).
 /// * `issuer_did`: a DID of the issuer signing cred_def transaction to the Ledger
 /// * `schema_json`: credential schema as a json
 /// * `tag`: allows to distinct between credential definitions for the same issuer and schema
 /// * `signature_type`: credential definition type (optional, 'CL' by default) that defines credentials signature and revocation math. Supported types are:
-///     - 'CL': Camenisch-Lysyanskaya credential signature type
+///     - 'CL': Camenisch-Lysyanskaya credential signature type that is implemented according to the algorithm in this paper:
+///             https://github.com/hyperledger/ursa/blob/master/libursa/docs/AnonCred.pdf
+///         And is documented in this HIPE:
+///             https://github.com/hyperledger/indy-hipe/blob/c761c583b1e01c1e9d3ceda2b03b35336fdc8cc1/text/anoncreds-protocol/README.md
 /// * `config_json`: (optional) type-specific configuration of credential definition as json:
 ///     - 'CL':
 ///         - support_revocation: whether to request non-revocation credential (optional, default false)
@@ -80,6 +92,17 @@ fn _issuer_create_schema(command_handle: CommandHandle, issuer_did: &str, name: 
 /// # Returns
 /// * `cred_def_id`: identifier of created credential definition
 /// * `cred_def_json`: public part of created credential definition
+/// {
+///     id: string - identifier of credential definition
+///     schemaId: string - identifier of stored in ledger schema
+///     type: string - type of the credential definition. CL is the only supported type now.
+///     tag: string - allows to distinct between credential definitions for the same issuer and schema
+///     value: Dictionary with Credential Definition's data is depended on the signature type: {
+///         primary: primary credential public key,
+///         Optional<revocation>: revocation credential public key
+///     },
+///     ver: Version of the CredDef json
+/// }
 pub fn issuer_create_and_store_credential_def(wallet_handle: WalletHandle, issuer_did: &str, schema_json: &str, tag: &str, signature_type: Option<&str>, config_json: &str) -> Box<Future<Item=(String, String), Error=IndyError>> {
     let (receiver, command_handle, cb) = ClosureHandler::cb_ec_string_string();
 
@@ -96,16 +119,16 @@ fn _issuer_create_and_store_credential_def(command_handle: CommandHandle, wallet
     let config_json = c_str!(config_json);
 
     ErrorCode::from(unsafe {
-      anoncreds::indy_issuer_create_and_store_credential_def(
-          command_handle,
-          wallet_handle,
-          issuer_did.as_ptr(),
-          schema_json.as_ptr(),
-          tag.as_ptr(),
-          opt_c_ptr!(signature_type, signature_type_str),
-          config_json.as_ptr(),
-          cb
-      )
+        anoncreds::indy_issuer_create_and_store_credential_def(
+            command_handle,
+            wallet_handle,
+            issuer_did.as_ptr(),
+            schema_json.as_ptr(),
+            tag.as_ptr(),
+            opt_c_ptr!(signature_type, signature_type_str),
+            config_json.as_ptr(),
+            cb
+        )
     })
 }
 
@@ -127,11 +150,12 @@ fn _issuer_create_and_store_credential_def(command_handle: CommandHandle, wallet
 /// This call requires access to pre-configured blob storage writer instance handle that will allow to write generated tails.
 ///
 /// # Arguments
-/// * `wallet_handle`: wallet handler (created by Wallet::open_wallet).
+/// * `wallet_handle`: wallet handle (created by Wallet::open_wallet).
 /// * `issuer_did`: a DID of the issuer signing transaction to the Ledger
 /// * `revoc_def_type`: revocation registry type (optional, default value depends on credential definition type). Supported types are:
-///     - 'CL_ACCUM': Type-3 pairing based accumulator. Default for 'CL' credential definition type
-/// * `tag`: allows to distinct between revocation registries for the same issuer and credential definition
+/// - 'CL_ACCUM': Type-3 pairing based accumulator implemented according to the algorithm in this paper:
+///                   https://github.com/hyperledger/ursa/blob/master/libursa/docs/AnonCred.pdf
+///               This type is default for 'CL' credential definition type./// * `tag`: allows to distinct between revocation registries for the same issuer and credential definition
 /// * `cred_def_id`: id of stored in ledger credential definition
 /// * `config_json`: type-specific configuration of revocation registry as json:
 ///     - 'CL_ACCUM': {
@@ -146,7 +170,31 @@ fn _issuer_create_and_store_credential_def(command_handle: CommandHandle, wallet
 /// # Returns
 /// * `revoc_reg_id`: identifier of created revocation registry definition
 /// * `revoc_reg_def_json`: public part of revocation registry definition
+///     {
+///         "id": string - ID of the Revocation Registry,
+///         "revocDefType": string - Revocation Registry type (only CL_ACCUM is supported for now),
+///         "tag": string - Unique descriptive ID of the Registry,
+///         "credDefId": string - ID of the corresponding CredentialDefinition,
+///         "value": Registry-specific data {
+///             "issuanceType": string - Type of Issuance(ISSUANCE_BY_DEFAULT or ISSUANCE_ON_DEMAND),
+///             "maxCredNum": number - Maximum number of credentials the Registry can serve.
+///             "tailsHash": string - Hash of tails.
+///             "tailsLocation": string - Location of tails file.
+///             "publicKeys": <public_keys> - Registry's public key (opaque type that contains data structures internal to Ursa.
+///                                                                  It should not be parsed and are likely to change in future versions).
+///         },
+///         "ver": string - version of revocation registry definition json.
+///     }
 /// * `revoc_reg_entry_json`: revocation registry entry that defines initial state of revocation registry
+/// {
+///     value: {
+///         prevAccum: string - previous accumulator value.
+///         accum: string - current accumulator value.
+///         issued: array<number> - an array of issued indices.
+///         revoked: array<number> an array of revoked indices.
+///     },
+///     ver: string - version revocation registry entry json
+/// }
 pub fn issuer_create_and_store_revoc_reg(wallet_handle: WalletHandle,
                                          issuer_did: &str,
                                          revoc_def_type: Option<&str>,
@@ -169,7 +217,7 @@ fn _issuer_create_and_store_revoc_reg(command_handle: CommandHandle, wallet_hand
     let config_json = c_str!(config_json);
 
     ErrorCode::from(unsafe {
-      anoncreds::indy_issuer_create_and_store_revoc_reg(command_handle, wallet_handle, issuer_did.as_ptr(), opt_c_ptr!(revoc_def_type, revoc_def_type_str), tag.as_ptr(), cred_def_id.as_ptr(), config_json.as_ptr(), tails_writer_handle, cb)
+        anoncreds::indy_issuer_create_and_store_revoc_reg(command_handle, wallet_handle, issuer_did.as_ptr(), opt_c_ptr!(revoc_def_type, revoc_def_type_str), tag.as_ptr(), cred_def_id.as_ptr(), config_json.as_ptr(), tails_writer_handle, cb)
     })
 }
 
@@ -178,7 +226,7 @@ fn _issuer_create_and_store_revoc_reg(command_handle: CommandHandle, wallet_hand
 /// for authentication between protocol steps and integrity checking.
 ///
 /// # Arguments
-/// * `wallet_handle`: wallet handler (created by Wallet::open_wallet)
+/// * `wallet_handle`: wallet handle (created by Wallet::open_wallet)
 /// * `cred_def_id`: id of credential definition stored in the wallet
 ///
 /// # Returns
@@ -187,7 +235,9 @@ fn _issuer_create_and_store_revoc_reg(command_handle: CommandHandle, wallet_hand
 ///     "cred_def_id": string,
 ///     // Fields below can depend on Cred Def type
 ///     "nonce": string,
-///     "key_correctness_proof" : <key_correctness_proof>
+///     "key_correctness_proof" : key correctness proof for credential definition correspondent to cred_def_id
+///                                   (opaque type that contains data structures internal to Ursa.
+///                                   It should not be parsed and are likely to change in future versions).
 /// }
 pub fn issuer_create_credential_offer(wallet_handle: WalletHandle, cred_def_id: &str) -> Box<Future<Item=String, Error=IndyError>> {
     let (receiver, command_handle, cb) = ClosureHandler::cb_ec_string();
@@ -201,7 +251,7 @@ fn _issuer_create_credential_offer(command_handle: CommandHandle, wallet_handle:
     let cred_def_id = c_str!(cred_def_id);
 
     ErrorCode::from(unsafe {
-      anoncreds::indy_issuer_create_credential_offer(command_handle, wallet_handle, cred_def_id.as_ptr(), cb)
+        anoncreds::indy_issuer_create_credential_offer(command_handle, wallet_handle, cred_def_id.as_ptr(), cb)
     })
 }
 
@@ -217,7 +267,7 @@ fn _issuer_create_credential_offer(command_handle: CommandHandle, wallet_handle:
 /// Note that it is possible to accumulate deltas to reduce ledger load.
 ///
 /// # Arguments
-/// * `wallet_handle`: wallet handler (created by Wallet::open_wallet).
+/// * `wallet_handle`: wallet handle (created by Wallet::open_wallet).
 /// * `cred_offer_json`: a cred offer created by create_credential_offer
 /// * `cred_req_json`: a credential request created by store_credential
 /// * `cred_values_json`: a credential containing attribute values for each of requested attribute names.
@@ -237,8 +287,12 @@ fn _issuer_create_credential_offer(command_handle: CommandHandle, wallet_handle:
 ///         "rev_reg_def_id", Optional<string>,
 ///         "values": <see cred_values_json above>,
 ///         // Fields below can depend on Cred Def type
-///         "signature": <signature>,
-///         "signature_correctness_proof": <signature_correctness_proof>
+///         "signature": <credential signature>,
+///                      (opaque type that contains data structures internal to Ursa.
+///                       It should not be parsed and are likely to change in future versions).
+///         "signature_correctness_proof": credential signature correctness proof
+///                      (opaque type that contains data structures internal to Ursa.
+///                       It should not be parsed and are likely to change in future versions).
 ///     }
 /// * `cred_revoc_id`: local id for revocation info (Can be used for revocation of this credential)
 /// * `revoc_reg_delta_json`: Revocation registry delta json with a newly issued credential
@@ -271,7 +325,7 @@ fn _issuer_create_credential(
     let rev_reg_id_str = opt_c_str!(rev_reg_id);
 
     ErrorCode::from(unsafe {
-      anoncreds::indy_issuer_create_credential(command_handle, wallet_handle, cred_offer_json.as_ptr(), cred_req_json.as_ptr(), cred_values_json.as_ptr(), opt_c_ptr!(rev_reg_id, rev_reg_id_str), blob_storage_reader_handle, cb)
+        anoncreds::indy_issuer_create_credential(command_handle, wallet_handle, cred_offer_json.as_ptr(), cred_req_json.as_ptr(), cred_values_json.as_ptr(), opt_c_ptr!(rev_reg_id, rev_reg_id_str), blob_storage_reader_handle, cb)
     })
 }
 
@@ -284,7 +338,7 @@ fn _issuer_create_credential(
 /// Note that it is possible to accumulate deltas to reduce ledger load.
 ///
 /// # Arguments
-/// * `wallet_handle`: wallet handler (created by Wallet::open_wallet).
+/// * `wallet_handle`: wallet handle (created by Wallet::open_wallet).
 /// * `blob_storage_reader_cfg_handle`: configuration of blob storage reader handle that will allow to read revocation tails
 /// * `rev_reg_id: id of revocation` registry stored in wallet
 /// * `cred_revoc_id`: local id for revocation info
@@ -309,7 +363,7 @@ fn _issuer_revoke_credential(command_handle: CommandHandle,
     let cred_revoc_id = c_str!(cred_revoc_id);
 
     ErrorCode::from(unsafe {
-      anoncreds::indy_issuer_revoke_credential(command_handle, wallet_handle, blob_storage_reader_cfg_handle, rev_reg_id.as_ptr(), cred_revoc_id.as_ptr(), cb)
+        anoncreds::indy_issuer_revoke_credential(command_handle, wallet_handle, blob_storage_reader_cfg_handle, rev_reg_id.as_ptr(), cred_revoc_id.as_ptr(), cb)
     })
 }
 
@@ -335,7 +389,7 @@ fn _issuer_merge_revocation_registry_deltas(command_handle: CommandHandle, rev_r
     let other_rev_reg_delta_json = c_str!(other_rev_reg_delta_json);
 
     ErrorCode::from(unsafe {
-      anoncreds::indy_issuer_merge_revocation_registry_deltas(command_handle, rev_reg_delta_json.as_ptr(), other_rev_reg_delta_json.as_ptr(), cb)
+        anoncreds::indy_issuer_merge_revocation_registry_deltas(command_handle, rev_reg_delta_json.as_ptr(), other_rev_reg_delta_json.as_ptr(), cb)
     })
 }
 
@@ -344,7 +398,7 @@ fn _issuer_merge_revocation_registry_deltas(command_handle: CommandHandle, rev_r
 /// The id must be unique.
 ///
 /// # Arguments
-/// * `wallet_handle`: wallet handler (created by Wallet::open_wallet).
+/// * `wallet_handle`: wallet handle (created by Wallet::open_wallet).
 /// * `master_secret_id`: (optional, if not present random one will be generated) new master id
 ///
 /// # Returns
@@ -361,14 +415,14 @@ fn _prover_create_master_secret(command_handle: CommandHandle, wallet_handle: Wa
     let master_secret_id_str = opt_c_str!(master_secret_id);
 
     ErrorCode::from(unsafe {
-      anoncreds::indy_prover_create_master_secret(command_handle, wallet_handle, opt_c_ptr!(master_secret_id, master_secret_id_str), cb)
+        anoncreds::indy_prover_create_master_secret(command_handle, wallet_handle, opt_c_ptr!(master_secret_id, master_secret_id_str), cb)
     })
 }
 
 /// Gets human readable credential by the given id.
 ///
 /// # Arguments
-/// * `wallet_handle`: wallet handler (created by Wallet::open_wallet).
+/// * `wallet_handle`: wallet handle (created by Wallet::open_wallet).
 /// * `cred_id`: Identifier by which requested credential is stored in the wallet
 ///
 /// # Returns
@@ -392,7 +446,28 @@ fn _prover_get_credential(command_handle: CommandHandle, wallet_handle: WalletHa
     let cred_id = c_str!(cred_id);
 
     ErrorCode::from(unsafe {
-      anoncreds::indy_prover_get_credential(command_handle, wallet_handle, cred_id.as_ptr(), cb)
+        anoncreds::indy_prover_get_credential(command_handle, wallet_handle, cred_id.as_ptr(), cb)
+    })
+}
+
+/// Deletes credential by given id.
+///
+/// # Arguments
+/// * `wallet_handle`: wallet handle (created by Wallet::open_wallet).
+/// * `cred_id`: Identifier by which requested credential is stored in the wallet
+pub fn prover_delete_credential(wallet_handle: WalletHandle, cred_id: &str) -> Box<Future<Item=(), Error=IndyError>> {
+    let (receiver, command_handle, cb) = ClosureHandler::cb_ec();
+
+    let err = _prover_delete_credential(command_handle, wallet_handle, cred_id, cb);
+
+    ResultHandler::empty(command_handle, err, receiver)
+}
+
+fn _prover_delete_credential(command_handle: CommandHandle, wallet_handle: WalletHandle, cred_id: &str, cb: Option<ResponseEmptyCB>) -> ErrorCode {
+    let cred_id = c_str!(cred_id);
+
+    ErrorCode::from(unsafe {
+        anoncreds::indy_prover_delete_credential(command_handle, wallet_handle, cred_id.as_ptr(), cb)
     })
 }
 
@@ -403,7 +478,7 @@ fn _prover_get_credential(command_handle: CommandHandle, wallet_handle: WalletHa
 /// The blinded master secret is a part of the credential request.
 ///
 /// # Arguments
-/// * `wallet_handle`: wallet handler (created by open_wallet)
+/// * `wallet_handle`: wallet handle (created by open_wallet)
 /// * `prover_did`: a DID of the prover
 /// * `cred_offer_json`: credential offer as a json containing information about the issuer and a credential
 /// * `cred_def_json`: credential definition json related to <cred_def_id> in <cred_offer_json>
@@ -416,7 +491,11 @@ fn _prover_get_credential(command_handle: CommandHandle, wallet_handle: WalletHa
 ///      "cred_def_id" : string,
 ///         // Fields below can depend on Cred Def type
 ///      "blinded_ms" : <blinded_master_secret>,
+///                     (opaque type that contains data structures internal to Ursa.
+///                      It should not be parsed and are likely to change in future versions).
 ///      "blinded_ms_correctness_proof" : <blinded_ms_correctness_proof>,
+///                     (opaque type that contains data structures internal to Ursa.
+///                      It should not be parsed and are likely to change in future versions).
 ///      "nonce": string
 ///    }
 /// * `cred_req_metadata_json`: Credential request metadata json for further processing of received form Issuer credential.
@@ -436,7 +515,77 @@ fn _prover_create_credential_req(command_handle: CommandHandle, wallet_handle: W
     let master_secret_id = c_str!(master_secret_id);
 
     ErrorCode::from(unsafe {
-      anoncreds::indy_prover_create_credential_req(command_handle, wallet_handle, prover_did.as_ptr(), cred_offer_json.as_ptr(), cred_def_json.as_ptr(), master_secret_id.as_ptr(), cb)
+        anoncreds::indy_prover_create_credential_req(command_handle, wallet_handle, prover_did.as_ptr(), cred_offer_json.as_ptr(), cred_def_json.as_ptr(), master_secret_id.as_ptr(), cb)
+    })
+}
+
+/// Set credential attribute tagging policy.
+/// Writes a non-secret record marking attributes to tag, and optionally
+/// updates tags on existing credentials on the credential definition to match.
+///
+/// The following tags are always present on write:
+///     {
+///         "schema_id": <credential schema id>,
+///         "schema_issuer_did": <credential schema issuer did>,
+///         "schema_name": <credential schema name>,
+///         "schema_version": <credential schema version>,
+///         "issuer_did": <credential issuer did>,
+///         "cred_def_id": <credential definition id>,
+///         "rev_reg_id": <credential revocation registry id>, // "None" as string if not present
+///     }
+///
+/// The policy sets the following tags for each attribute it marks taggable, written to subsequent
+/// credentials and (optionally) all existing credentials on the credential definition:
+///     {
+///         "attr::<attribute name>::marker": "1",
+///         "attr::<attribute name>::value": <attribute raw value>,
+///     }
+///
+/// # Arguments
+/// command_handle: command handle to map callback to user context.
+/// wallet_handle: wallet handle (created by Wallet::open_wallet).
+/// cred_def_id: credential definition id
+/// tag_attrs_json: JSON array with names of attributes to tag by policy, or null for all
+/// retroactive: boolean, whether to apply policy to existing credentials on credential definition identifier
+pub fn prover_set_credential_attr_tag_policy(wallet_handle: WalletHandle, cred_def_id: &str, tag_attrs_json: Option<&str>, retroactive: bool) -> Box<Future<Item=(), Error=IndyError>> {
+    let (receiver, command_handle, cb) = ClosureHandler::cb_ec();
+
+    let err = _prover_set_credential_attr_tag_policy(command_handle, wallet_handle, cred_def_id, tag_attrs_json, retroactive, cb);
+
+    ResultHandler::empty(command_handle, err, receiver)
+}
+
+fn _prover_set_credential_attr_tag_policy(command_handle: CommandHandle, wallet_handle: WalletHandle, cred_def_id: &str, tag_attrs_json: Option<&str>, retroactive: bool, cb: Option<ResponseEmptyCB>) -> ErrorCode {
+    let cred_def_id = c_str!(cred_def_id);
+    let tag_attrs_json_str = opt_c_str!(tag_attrs_json);
+
+    ErrorCode::from(unsafe {
+      anoncreds::indy_prover_set_credential_attr_tag_policy(command_handle, wallet_handle, cred_def_id.as_ptr(), opt_c_ptr!(tag_attrs_json, tag_attrs_json_str), retroactive, cb)
+    })
+}
+
+/// Get credential attribute tagging policy by credential definition id.
+///
+/// # Arguments
+/// * `wallet_handle`: wallet handle (created by Wallet::open_wallet).
+/// * `cred_id`: Identifier by which requested credential is stored in the wallet
+///
+/// # Returns
+/// JSON array with all attributes that current policy marks taggable;
+/// null for default policy (tag all credential attributes).
+pub fn prover_get_credential_attr_tag_policy(wallet_handle: WalletHandle, cred_id: &str) -> Box<Future<Item=String, Error=IndyError>> {
+    let (receiver, command_handle, cb) = ClosureHandler::cb_ec_string();
+
+    let err = _prover_get_credential_attr_tag_policy(command_handle, wallet_handle, cred_id, cb);
+
+    ResultHandler::str(command_handle, err, receiver)
+}
+
+fn _prover_get_credential_attr_tag_policy(command_handle: CommandHandle, wallet_handle: WalletHandle, cred_id: &str, cb: Option<ResponseStringCB>) -> ErrorCode {
+    let cred_id = c_str!(cred_id);
+
+    ErrorCode::from(unsafe {
+      anoncreds::indy_prover_get_credential_attr_tag_policy(command_handle, wallet_handle, cred_id.as_ptr(), cb)
     })
 }
 
@@ -452,13 +601,13 @@ fn _prover_create_credential_req(command_handle: CommandHandle, wallet_handle: W
 ///         "issuer_did": <credential issuer did>,
 ///         "cred_def_id": <credential definition id>,
 ///         "rev_reg_id": <credential revocation registry id>, // "None" as string if not present
-///         // for every attribute in <credential values>
+///         // for every attribute in <credential values> that credential attribute tagging policy marks taggable
 ///         "attr::<attribute name>::marker": "1",
 ///         "attr::<attribute name>::value": <attribute raw value>,
 ///     }
 ///
 /// # Arguments
-/// * `wallet_handle`: wallet handler (created by open_wallet).
+/// * `wallet_handle`: wallet handle (created by open_wallet).
 /// * `cred_id`: (optional, default is a random one) identifier by which credential will be stored in the wallet
 /// * `cred_req_metadata_json`: a credential request metadata created by create_credential_req
 /// * `cred_json`: credential json received from issuer
@@ -483,7 +632,7 @@ fn _prover_store_credential(command_handle: CommandHandle, wallet_handle: Wallet
     let rev_reg_def_json_str = opt_c_str!(rev_reg_def_json);
 
     ErrorCode::from(unsafe {
-      anoncreds::indy_prover_store_credential(command_handle, wallet_handle, opt_c_ptr!(cred_id, cred_id_str), cred_req_metadata_json.as_ptr(), cred_json.as_ptr(), cred_def_json.as_ptr(), opt_c_ptr!(rev_reg_def_json, rev_reg_def_json_str), cb)
+        anoncreds::indy_prover_store_credential(command_handle, wallet_handle, opt_c_ptr!(cred_id, cred_id_str), cred_req_metadata_json.as_ptr(), cred_json.as_ptr(), cred_def_json.as_ptr(), opt_c_ptr!(rev_reg_def_json, rev_reg_def_json_str), cb)
     })
 }
 
@@ -492,7 +641,7 @@ fn _prover_store_credential(command_handle: CommandHandle, wallet_handle: Wallet
 /// Credentials can be filtered by Issuer, credential_def and/or Schema.
 ///
 /// # Arguments
-/// * `wallet_handle`: wallet handler (created by open_wallet).
+/// * `wallet_handle`: wallet handle (created by open_wallet).
 /// * `filter_json`: filter for credentials {
 ///    "schema_id": string, (Optional)
 ///    "schema_issuer_did": string, (Optional)
@@ -523,7 +672,7 @@ fn _prover_get_credentials(command_handle: CommandHandle, wallet_handle: WalletH
     let filter_json_str = opt_c_str!(filter_json);
 
     ErrorCode::from(unsafe {
-      anoncreds::indy_prover_get_credentials(command_handle, wallet_handle, opt_c_ptr!(filter_json, filter_json_str), cb)
+        anoncreds::indy_prover_get_credentials(command_handle, wallet_handle, opt_c_ptr!(filter_json, filter_json_str), cb)
     })
 }
 
@@ -535,7 +684,7 @@ fn _prover_get_credentials(command_handle: CommandHandle, wallet_handle: WalletH
 /// to fetch records by small batches (with fetch_credentials).
 ///
 /// # Arguments
-/// * `wallet_handle`: wallet handler (created by Wallet::open_wallet).
+/// * `wallet_handle`: wallet handle (created by Wallet::open_wallet).
 /// * `query_json`: Wql query filter for credentials searching based on tags.
 ///     where query: indy-sdk/doc/design/011-wallet-query-language/README.md
 ///
@@ -554,7 +703,7 @@ fn _prover_search_credentials(command_handle: CommandHandle, wallet_handle: Wall
     let query_json_str = opt_c_str!(query_json);
 
     ErrorCode::from(unsafe {
-      anoncreds::indy_prover_search_credentials(command_handle, wallet_handle, opt_c_ptr!(query_json, query_json_str), cb)
+        anoncreds::indy_prover_search_credentials(command_handle, wallet_handle, opt_c_ptr!(query_json, query_json_str), cb)
     })
 }
 
@@ -583,9 +732,8 @@ pub fn prover_fetch_credentials(search_handle: SearchHandle, count: usize) -> Bo
 }
 
 fn _prover_fetch_credentials(command_handle: CommandHandle, search_handle: SearchHandle, count: usize, cb: Option<ResponseStringCB>) -> ErrorCode {
-
     ErrorCode::from(unsafe {
-      anoncreds::indy_prover_fetch_credentials(command_handle, search_handle, count, cb)
+        anoncreds::indy_prover_fetch_credentials(command_handle, search_handle, count, cb)
     })
 }
 
@@ -602,9 +750,8 @@ pub fn prover_close_credentials_search(search_handle: SearchHandle) -> Box<Futur
 }
 
 fn _prover_close_credentials_search(command_handle: CommandHandle, search_handle: SearchHandle, cb: Option<ResponseEmptyCB>) -> ErrorCode {
-
     ErrorCode::from(unsafe {
-      anoncreds::indy_prover_close_credentials_search(command_handle, search_handle, cb)
+        anoncreds::indy_prover_close_credentials_search(command_handle, search_handle, cb)
     })
 }
 
@@ -614,7 +761,7 @@ fn _prover_close_credentials_search(command_handle: CommandHandle, search_handle
 /// Use <search_credentials_for_proof_req> to fetch records by small batches.
 ///
 /// # Arguments
-/// * `wallet_handle`: wallet handler (created by Wallet::open_wallet).
+/// * `wallet_handle`: wallet handle (created by Wallet::open_wallet).
 /// * `proof_request_json`: proof request json
 ///     {
 ///         "name": string,
@@ -695,7 +842,7 @@ fn _prover_get_credentials_for_proof_req(command_handle: CommandHandle, wallet_h
     let proof_request_json = c_str!(proof_request_json);
 
     ErrorCode::from(unsafe {
-      anoncreds::indy_prover_get_credentials_for_proof_req(command_handle, wallet_handle, proof_request_json.as_ptr(), cb)
+        anoncreds::indy_prover_get_credentials_for_proof_req(command_handle, wallet_handle, proof_request_json.as_ptr(), cb)
     })
 }
 
@@ -706,7 +853,7 @@ fn _prover_get_credentials_for_proof_req(command_handle: CommandHandle, wallet_h
 /// to fetch records by small batches (with fetch_credentials_for_proof_req).
 ///
 /// # Arguments
-/// * `wallet_handle`: wallet handler (created by Wallet::open_wallet).
+/// * `wallet_handle`: wallet handle (created by Wallet::open_wallet).
 /// * `proof_request_json`: proof request json
 ///     {
 ///         "name": string,
@@ -781,7 +928,7 @@ fn _prover_search_credentials_for_proof_req(command_handle: CommandHandle,
     let extra_query_json_str = opt_c_str!(extra_query_json);
 
     ErrorCode::from(unsafe {
-      anoncreds::indy_prover_search_credentials_for_proof_req(command_handle, wallet_handle, proof_request_json.as_ptr(), opt_c_ptr!(extra_query_json, extra_query_json_str), cb)
+        anoncreds::indy_prover_search_credentials_for_proof_req(command_handle, wallet_handle, proof_request_json.as_ptr(), opt_c_ptr!(extra_query_json, extra_query_json_str), cb)
     })
 }
 
@@ -828,7 +975,7 @@ fn _prover_fetch_credentials_for_proof_req(command_handle: CommandHandle, search
     let item_referent = c_str!(item_referent);
 
     ErrorCode::from(unsafe {
-      anoncreds::indy_prover_fetch_credentials_for_proof_req(command_handle, search_handle, item_referent.as_ptr(), count, cb)
+        anoncreds::indy_prover_fetch_credentials_for_proof_req(command_handle, search_handle, item_referent.as_ptr(), count, cb)
     })
 }
 
@@ -845,9 +992,8 @@ pub fn prover_close_credentials_search_for_proof_req(search_handle: SearchHandle
 }
 
 fn _prover_close_credentials_search_for_proof_req(command_handle: CommandHandle, search_handle: SearchHandle, cb: Option<ResponseEmptyCB>) -> ErrorCode {
-
     ErrorCode::from(unsafe {
-      anoncreds::indy_prover_close_credentials_search_for_proof_req(command_handle, search_handle, cb)
+        anoncreds::indy_prover_close_credentials_search_for_proof_req(command_handle, search_handle, cb)
     })
 }
 
@@ -860,7 +1006,7 @@ fn _prover_close_credentials_search_for_proof_req(command_handle: CommandHandle,
 /// The proof contains either proof or self-attested attribute value for each requested attribute.
 ///
 /// # Arguments
-/// * `wallet_handle`: wallet handler (created by Wallet::open_wallet).
+/// * `wallet_handle`: wallet handle (created by Wallet::open_wallet).
 /// * `proof_request_json`: proof request json
 ///     {
 ///         "name": string,
@@ -975,7 +1121,8 @@ fn _prover_close_credentials_search_for_proof_req(command_handle: CommandHandle,
 ///         "proof": {
 ///             "proofs": [ <credential_proof>, <credential_proof>, <credential_proof> ],
 ///             "aggregated_proof": <aggregated_proof>
-///         }
+///         } (opaque type that contains data structures internal to Ursa.
+///           It should not be parsed and are likely to change in future versions).
 ///         "identifiers": [{schema_id, cred_def_id, Optional<rev_reg_id>, Optional<timestamp>}]
 ///     }
 pub fn prover_create_proof(wallet_handle: WalletHandle, proof_req_json: &str, requested_credentials_json: &str, master_secret_id: &str, schemas_json: &str, credential_defs_json: &str, rev_states_json: &str) -> Box<Future<Item=String, Error=IndyError>> {
@@ -995,7 +1142,7 @@ fn _prover_create_proof(command_handle: CommandHandle, wallet_handle: WalletHand
     let rev_states_json = c_str!(rev_states_json);
 
     ErrorCode::from(unsafe {
-      anoncreds::indy_prover_create_proof(command_handle, wallet_handle, proof_req_json.as_ptr(), requested_credentials_json.as_ptr(), master_secret_id.as_ptr(), schemas_json.as_ptr(), credential_defs_json.as_ptr(), rev_states_json.as_ptr(), cb)
+        anoncreds::indy_prover_create_proof(command_handle, wallet_handle, proof_req_json.as_ptr(), requested_credentials_json.as_ptr(), master_secret_id.as_ptr(), schemas_json.as_ptr(), credential_defs_json.as_ptr(), rev_states_json.as_ptr(), cb)
     })
 }
 
@@ -1004,7 +1151,7 @@ fn _prover_create_proof(command_handle: CommandHandle, wallet_handle: WalletHand
 /// All required schemas, public keys and revocation registries must be provided.
 ///
 /// # Arguments
-/// * `wallet_handle`: wallet handler (created by Wallet::open_wallet).
+/// * `wallet_handle`: wallet handle (created by Wallet::open_wallet).
 /// * `proof_request_json`: proof request json
 ///     {
 ///         "name": string,
@@ -1116,7 +1263,8 @@ fn _verifier_verify_proof(command_handle: CommandHandle, proof_request_json: &st
 /// * `revocation_state_json`:
 /// {
 ///     "rev_reg": <revocation registry>,
-///     "witness": <witness>,
+///     "witness": <witness>,  (opaque type that contains data structures internal to Ursa.
+///                             It should not be parsed and are likely to change in future versions).
 ///     "timestamp" : integer
 /// }
 pub fn create_revocation_state(blob_storage_reader_handle: BlobStorageReaderHandle, rev_reg_def_json: &str, rev_reg_delta_json: &str, timestamp: u64, cred_rev_id: &str) -> Box<Future<Item=String, Error=IndyError>> {
@@ -1133,7 +1281,7 @@ fn _create_revocation_state(command_handle: CommandHandle, blob_storage_reader_h
     let cred_rev_id = c_str!(cred_rev_id);
 
     ErrorCode::from(unsafe {
-      anoncreds::indy_create_revocation_state(command_handle, blob_storage_reader_handle, rev_reg_def_json.as_ptr(), rev_reg_delta_json.as_ptr(), timestamp, cred_rev_id.as_ptr(), cb)
+        anoncreds::indy_create_revocation_state(command_handle, blob_storage_reader_handle, rev_reg_def_json.as_ptr(), rev_reg_delta_json.as_ptr(), timestamp, cred_rev_id.as_ptr(), cb)
     })
 }
 
@@ -1152,7 +1300,8 @@ fn _create_revocation_state(command_handle: CommandHandle, blob_storage_reader_h
 /// * `revocation_state_json`:
 /// {
 ///     "rev_reg": <revocation registry>,
-///     "witness": <witness>,
+///     "witness": <witness>,  (opaque type that contains data structures internal to Ursa.
+///                            It should not be parsed and are likely to change in future versions).
 ///     "timestamp" : integer
 /// }
 pub fn update_revocation_state(blob_storage_reader_handle: BlobStorageReaderHandle, rev_state_json: &str, rev_reg_def_json: &str, rev_reg_delta_json: &str, timestamp: u64, cred_rev_id: &str) -> Box<Future<Item=String, Error=IndyError>> {
@@ -1170,6 +1319,6 @@ fn _update_revocation_state(command_handle: CommandHandle, blob_storage_reader_h
     let cred_rev_id = c_str!(cred_rev_id);
 
     ErrorCode::from(unsafe {
-      anoncreds::indy_update_revocation_state(command_handle, blob_storage_reader_handle, rev_state_json.as_ptr(), rev_reg_def_json.as_ptr(), rev_reg_delta_json.as_ptr(), timestamp, cred_rev_id.as_ptr(), cb)
+        anoncreds::indy_update_revocation_state(command_handle, blob_storage_reader_handle, rev_state_json.as_ptr(), rev_reg_def_json.as_ptr(), rev_reg_delta_json.as_ptr(), timestamp, cred_rev_id.as_ptr(), cb)
     })
 }

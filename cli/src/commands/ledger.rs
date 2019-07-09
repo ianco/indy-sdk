@@ -13,8 +13,9 @@ use serde_json::Value as JSONValue;
 use serde_json::Map as JSONMap;
 
 use std::collections::{HashMap, BTreeMap};
-use std::io::Write;
+
 use utils::table::{print_table, print_list_table};
+use utils::file::{read_file, write_file};
 
 use self::regex::Regex;
 use self::chrono::prelude::*;
@@ -39,25 +40,26 @@ pub mod group {
 }
 
 macro_rules! send_write_request {
-    ($ctx:expr, $send:expr, $request:expr, $pool_handle:expr, $pool_name:expr, $wallet_handle:expr, $wallet_name:expr, $submitter_did:expr) => ({
+    ($ctx:expr, $send:expr, $request:expr, $wallet_handle:expr, $wallet_name:expr, $submitter_did:expr) => ({
         let request = Ledger::sign_request($wallet_handle, $submitter_did, $request)
-            .map_err(|err| handle_indy_error(err, Some($submitter_did), Some($pool_name), Some($wallet_name)))?;
+            .map_err(|err| handle_indy_error(err, Some($submitter_did), None, Some($wallet_name)))?;
 
-        send_request!($ctx, $send, &request, $pool_handle, $pool_name, Some($wallet_name), Some($submitter_did))
+        send_request!($ctx, $send, &request, Some($wallet_name), Some($submitter_did))
     })
 }
 
 macro_rules! send_read_request {
-    ($ctx:expr, $send:expr, $request:expr, $pool_handle:expr, $pool_name:expr, $submitter_did:expr) => {
-        send_request!($ctx, $send, $request, $pool_handle, $pool_name, None, $submitter_did)
-    }
+    ($ctx:expr, $send:expr, $request:expr, $submitter_did:expr) => ({
+        send_request!($ctx, $send, $request, None, $submitter_did)
+    })
 }
 
 macro_rules! send_request {
-    ($ctx:expr, $send:expr, $request:expr, $pool_handle:expr, $pool_name:expr, $wallet_name:expr, $submitter_did:expr) => {
+    ($ctx:expr, $send:expr, $request:expr, $wallet_name:expr, $submitter_did:expr) => {
         if $send {
-            let response_json = Ledger::submit_request($pool_handle, $request)
-                .map_err(|err| handle_indy_error(err, $submitter_did, Some($pool_name), $wallet_name))?;
+            let (pool_handle, pool_name) = ensure_connected_pool($ctx)?;
+            let response_json = Ledger::submit_request(pool_handle, $request)
+                .map_err(|err| handle_indy_error(err, $submitter_did, Some(&pool_name), $wallet_name))?;
 
             let response = serde_json::from_str::<Response<serde_json::Value>>(&response_json)
                 .map_err(|err| println_err!("Invalid data has been received: {:?}", err))?;
@@ -78,7 +80,7 @@ pub mod nym_command {
     command!(CommandMetadata::build("nym", "Send NYM transaction to the Ledger.")
                 .add_required_param("did", "DID of new identity")
                 .add_optional_param("verkey", "Verification key of new identity")
-                .add_optional_param("role", "Role of identity. One of: STEWARD, TRUSTEE, TRUST_ANCHOR, NETWORK_MONITOR or empty in case of blacklisting NYM")
+                .add_optional_param("role", "Role of identity. One of: STEWARD, TRUSTEE, TRUST_ANCHOR, ENDORSER, NETWORK_MONITOR or associated number, or empty in case of blacklisting NYM")
                 .add_optional_param("fees_inputs","The list of source inputs")
                 .add_optional_param("fees_outputs","The list of outputs in the following format: (recipient, amount)")
                 .add_optional_param("extra","Optional information for fees payment operation")
@@ -95,7 +97,6 @@ pub mod nym_command {
     fn execute(ctx: &CommandContext, params: &CommandParams) -> Result<(), ()> {
         trace!("execute >> ctx {:?} params {:?}", ctx, params);
 
-        let (pool_handle, pool_name) = ensure_connected_pool(&ctx)?;
         let (wallet_handle, wallet_name) = ensure_opened_wallet(&ctx)?;
         let submitter_did = ensure_active_did(&ctx)?;
 
@@ -115,7 +116,7 @@ pub mod nym_command {
         let payment_method = set_request_fees(&mut request, wallet_handle, Some(&submitter_did), &fees_inputs, &fees_outputs, extra)?;
 
         let (response_json, mut response): (String, Response<serde_json::Value>) =
-            send_write_request!(ctx, send, &request, pool_handle, &pool_name, wallet_handle, &wallet_name, &submitter_did);
+            send_write_request!(ctx, send, &request, wallet_handle, &wallet_name, &submitter_did);
 
         if let Some(result) = response.result.as_mut() {
             result["txn"]["data"]["role"] = get_role_title(&result["txn"]["data"]["role"]);
@@ -153,7 +154,6 @@ pub mod get_nym_command {
     fn execute(ctx: &CommandContext, params: &CommandParams) -> Result<(), ()> {
         trace!("execute >> ctx {:?} params {:?}", ctx, params);
 
-        let (pool_handle, pool_name) = ensure_connected_pool(&ctx)?;
         let submitter_did = get_active_did(&ctx);
 
         let target_did = get_str_param("did", params).map_err(error_err!())?;
@@ -162,7 +162,7 @@ pub mod get_nym_command {
         let request = Ledger::build_get_nym_request(submitter_did.as_ref().map(String::as_str), target_did)
             .map_err(|err| handle_indy_error(err, None, None, None))?;
 
-        let (_, mut response) = send_read_request!(&ctx, send, &request, pool_handle, &pool_name, submitter_did.as_ref().map(String::as_str));
+        let (_, mut response) = send_read_request!(&ctx, send, &request, submitter_did.as_ref().map(String::as_str));
 
         if let Some(result) = response.result.as_mut() {
             let data = serde_json::from_str::<serde_json::Value>(&result["data"].as_str().unwrap_or(""));
@@ -212,7 +212,6 @@ pub mod attrib_command {
     fn execute(ctx: &CommandContext, params: &CommandParams) -> Result<(), ()> {
         trace!("execute >> ctx {:?} params {:?}", ctx, params);
 
-        let (pool_handle, pool_name) = ensure_connected_pool(&ctx)?;
         let (wallet_handle, wallet_name) = ensure_opened_wallet(&ctx)?;
         let submitter_did = ensure_active_did(&ctx)?;
 
@@ -233,7 +232,7 @@ pub mod attrib_command {
         let payment_method = set_request_fees(&mut request, wallet_handle, Some(&submitter_did), &fees_inputs, &fees_outputs, extra)?;
 
         let (response_json, response): (String, Response<serde_json::Value>) =
-            send_write_request!(ctx, send, &request, pool_handle, &pool_name, wallet_handle, &wallet_name, &submitter_did);
+            send_write_request!(ctx, send, &request, wallet_handle, &wallet_name, &submitter_did);
 
         let attribute =
             if raw.is_some() {
@@ -276,7 +275,6 @@ pub mod get_attrib_command {
     fn execute(ctx: &CommandContext, params: &CommandParams) -> Result<(), ()> {
         trace!("execute >> ctx {:?} params {:?}", ctx, params);
 
-        let (pool_handle, pool_name) = ensure_connected_pool(&ctx)?;
         let submitter_did = get_active_did(&ctx);
 
         let target_did = get_str_param("did", params).map_err(error_err!())?;
@@ -288,7 +286,7 @@ pub mod get_attrib_command {
         let request = Ledger::build_get_attrib_request(submitter_did.as_ref().map(String::as_str), target_did, raw, hash, enc)
             .map_err(|err| handle_indy_error(err, None, None, None))?;
 
-        let (_, mut response) = send_read_request!(&ctx, send, &request, pool_handle, &pool_name, submitter_did.as_ref().map(String::as_str));
+        let (_, mut response) = send_read_request!(&ctx, send, &request, submitter_did.as_ref().map(String::as_str));
 
         if let Some(result) = response.result.as_mut() {
             let data = result["data"].as_str().map(|data| serde_json::Value::String(data.to_string()));
@@ -329,7 +327,6 @@ pub mod schema_command {
     fn execute(ctx: &CommandContext, params: &CommandParams) -> Result<(), ()> {
         trace!("execute >> ctx {:?} params {:?}", ctx, params);
 
-        let (pool_handle, pool_name) = ensure_connected_pool(&ctx)?;
         let (wallet_handle, wallet_name) = ensure_opened_wallet(&ctx)?;
         let submitter_did = ensure_active_did(&ctx)?;
 
@@ -361,7 +358,7 @@ pub mod schema_command {
         let payment_method = set_request_fees(&mut request, wallet_handle, Some(&submitter_did), &fees_inputs, &fees_outputs, extra)?;
 
         let (response_json, response): (String, Response<serde_json::Value>) =
-            send_write_request!(ctx, send, &request, pool_handle, &pool_name, wallet_handle, &wallet_name, &submitter_did);
+            send_write_request!(ctx, send, &request, wallet_handle, &wallet_name, &submitter_did);
 
         handle_transaction_response(response)
             .map(|result| print_transaction_response(result,
@@ -471,7 +468,6 @@ pub mod get_schema_command {
     fn execute(ctx: &CommandContext, params: &CommandParams) -> Result<(), ()> {
         trace!("execute >> ctx {:?} params {:?}", ctx, params);
 
-        let (pool_handle, pool_name) = ensure_connected_pool(&ctx)?;
         let submitter_did = get_active_did(&ctx);
 
         let target_did = get_str_param("did", params).map_err(error_err!())?;
@@ -484,7 +480,7 @@ pub mod get_schema_command {
         let request = Ledger::build_get_schema_request(submitter_did.as_ref().map(String::as_str), &id)
             .map_err(|err| handle_indy_error(err, None, None, None))?;
 
-        let (_, response) = send_read_request!(&ctx, send, &request, pool_handle, &pool_name, submitter_did.as_ref().map(String::as_str));
+        let (_, response) = send_read_request!(&ctx, send, &request, submitter_did.as_ref().map(String::as_str));
 
         if let Some(result) = response.result.as_ref() {
             if !result["seqNo"].is_i64() {
@@ -525,7 +521,6 @@ pub mod cred_def_command {
     fn execute(ctx: &CommandContext, params: &CommandParams) -> Result<(), ()> {
         trace!("execute >> ctx {:?} params {:?}", ctx, params);
 
-        let (pool_handle, pool_name) = ensure_connected_pool(&ctx)?;
         let (wallet_handle, wallet_name) = ensure_opened_wallet(&ctx)?;
         let submitter_did = ensure_active_did(&ctx)?;
 
@@ -567,7 +562,7 @@ pub mod cred_def_command {
         let payment_method = set_request_fees(&mut request, wallet_handle, Some(&submitter_did), &fees_inputs, &fees_outputs, extra)?;
 
         let (response_json, response): (String, Response<serde_json::Value>) =
-            send_write_request!(ctx, send, &request, pool_handle, &pool_name, wallet_handle, &wallet_name, &submitter_did);
+            send_write_request!(ctx, send, &request, wallet_handle, &wallet_name, &submitter_did);
 
         handle_transaction_response(response)
             .map(|result| print_transaction_response(result,
@@ -602,7 +597,6 @@ pub mod get_cred_def_command {
     fn execute(ctx: &CommandContext, params: &CommandParams) -> Result<(), ()> {
         trace!("execute >> ctx {:?} params {:?}", ctx, params);
 
-        let (pool_handle, pool_name) = ensure_connected_pool(&ctx)?;
         let submitter_did = get_active_did(&ctx);
 
         let schema_id = get_str_param("schema_id", params).map_err(error_err!())?;
@@ -616,7 +610,7 @@ pub mod get_cred_def_command {
         let request = Ledger::build_get_cred_def_request(submitter_did.as_ref().map(String::as_str), &id)
             .map_err(|err| handle_indy_error(err, None, None, None))?;
 
-        let (_, response) = send_read_request!(&ctx, send, &request, pool_handle, &pool_name, submitter_did.as_ref().map(String::as_str));
+        let (_, response) = send_read_request!(&ctx, send, &request, submitter_did.as_ref().map(String::as_str));
 
         if let Some(result) = response.result.as_ref() {
             if !result["seqNo"].is_i64() {
@@ -660,7 +654,6 @@ pub mod node_command {
     fn execute(ctx: &CommandContext, params: &CommandParams) -> Result<(), ()> {
         trace!("execute >> ctx {:?} params {:?}", ctx, params);
 
-        let (pool_handle, pool_name) = ensure_connected_pool(&ctx)?;
         let (wallet_handle, wallet_name) = ensure_opened_wallet(&ctx)?;
         let submitter_did = ensure_active_did(&ctx)?;
 
@@ -688,13 +681,11 @@ pub mod node_command {
             JSONValue::from(json).to_string()
         };
 
-        let mut request = Ledger::build_node_request(&submitter_did, target_did, &node_data)
+        let request = Ledger::build_node_request(&submitter_did, target_did, &node_data)
             .map_err(|err| handle_indy_error(err, None, None, None))?;
 
-        set_author_agreement(ctx, &mut request)?;
-
         let (_, response): (String, Response<serde_json::Value>) =
-            send_write_request!(ctx, send, &request, pool_handle, &pool_name, wallet_handle, &wallet_name, &submitter_did);
+            send_write_request!(ctx, send, &request, wallet_handle, &wallet_name, &submitter_did);
 
         let res = handle_transaction_response(response)
             .map(|result| print_transaction_response(result,
@@ -729,7 +720,6 @@ pub mod pool_config_command {
     fn execute(ctx: &CommandContext, params: &CommandParams) -> Result<(), ()> {
         trace!("execute >> ctx {:?} params {:?}", ctx, params);
 
-        let (pool_handle, pool_name) = ensure_connected_pool(&ctx)?;
         let (wallet_handle, wallet_name) = ensure_opened_wallet(&ctx)?;
         let submitter_did = ensure_active_did(&ctx)?;
 
@@ -737,13 +727,11 @@ pub mod pool_config_command {
         let force = get_opt_bool_param("force", params).map_err(error_err!())?.unwrap_or(false);
         let send = get_opt_bool_param("send", params).map_err(error_err!())?.unwrap_or(SEND_REQUEST);
 
-        let mut request = Ledger::indy_build_pool_config_request(&submitter_did, writes, force)
+        let request = Ledger::indy_build_pool_config_request(&submitter_did, writes, force)
             .map_err(|err| handle_indy_error(err, None, None, None))?;
 
-        set_author_agreement(ctx, &mut request)?;
-
         let (_, response): (String, Response<serde_json::Value>) =
-            send_write_request!(ctx, send, &request, pool_handle, &pool_name, wallet_handle, &wallet_name, &submitter_did);
+            send_write_request!(ctx, send, &request, wallet_handle, &wallet_name, &submitter_did);
 
         let res = handle_transaction_response(response)
             .map(|result| print_transaction_response(result,
@@ -868,7 +856,6 @@ pub mod pool_upgrade_command {
     fn execute(ctx: &CommandContext, params: &CommandParams) -> Result<(), ()> {
         trace!("execute >> ctx {:?} params {:?}", ctx, params);
 
-        let (pool_handle, pool_name) = ensure_connected_pool(&ctx)?;
         let (wallet_handle, wallet_name) = ensure_opened_wallet(&ctx)?;
         let submitter_did = ensure_active_did(&ctx)?;
 
@@ -884,14 +871,12 @@ pub mod pool_upgrade_command {
         let package = get_opt_str_param("package", params).map_err(error_err!())?;
         let send = get_opt_bool_param("send", params).map_err(error_err!())?.unwrap_or(SEND_REQUEST);
 
-        let mut request = Ledger::indy_build_pool_upgrade_request(&submitter_did, name, version, action, sha256,
-                                                                  timeout, schedule, justification, reinstall, force, package)
+        let request = Ledger::indy_build_pool_upgrade_request(&submitter_did, name, version, action, sha256,
+                                                              timeout, schedule, justification, reinstall, force, package)
             .map_err(|err| handle_indy_error(err, None, None, None))?;
 
-        set_author_agreement(ctx, &mut request)?;
-
         let (_, response): (String, Response<serde_json::Value>) =
-            send_write_request!(ctx, send, &request, pool_handle, &pool_name, wallet_handle, &wallet_name, &submitter_did);
+            send_write_request!(ctx, send, &request, wallet_handle, &wallet_name, &submitter_did);
 
         let mut schedule = None;
         let mut hash = None;
@@ -940,6 +925,7 @@ pub mod custom_command {
                 .add_optional_param("sign", "Is signature required")
                 .add_example(r#"ledger custom {"reqId":1,"identifier":"V4SGRU86Z58d6TV7PBUe6f","operation":{"type":"105","dest":"V4SGRU86Z58d6TV7PBUe6f"},"protocolVersion":2}"#)
                 .add_example(r#"ledger custom {"reqId":2,"identifier":"V4SGRU86Z58d6TV7PBUe6f","operation":{"type":"1","dest":"VsKV7grR1BUE29mG2Fm2kX"},"protocolVersion":2} sign=true"#)
+                .add_example(r#"ledger custom context"#)
                 .finalize()
     );
 
@@ -961,7 +947,7 @@ pub mod custom_command {
                     println!("Transaction stored into context: {:?}.", txn_);
                     println!("Would you like to send it? (y/n)");
 
-                    let use_transaction = ::command_executor::wait_for_user_reply();
+                    let use_transaction = ::command_executor::wait_for_user_reply(ctx);
 
                     if !use_transaction {
                         return Ok(println!("No transaction has been send."));
@@ -1024,7 +1010,6 @@ pub mod get_payment_sources_command {
     fn execute(ctx: &CommandContext, params: &CommandParams) -> Result<(), ()> {
         trace!("execute >> ctx {:?} params {:?}", ctx, params);
 
-        let (pool_handle, pool_name) = ensure_connected_pool(&ctx)?;
         let (wallet_handle, _) = ensure_opened_wallet(&ctx)?;
         let submitter_did = get_active_did(&ctx);
 
@@ -1034,7 +1019,7 @@ pub mod get_payment_sources_command {
         let (request, payment_method) = Payment::build_get_payment_sources_request(wallet_handle, submitter_did.as_ref().map(String::as_str), payment_address)
             .map_err(|err| handle_payment_error(err, None))?;
 
-        let (response, _) = send_read_request!(&ctx, send, &request, pool_handle, &pool_name, submitter_did.as_ref().map(String::as_str));
+        let (response, _) = send_read_request!(&ctx, send, &request, submitter_did.as_ref().map(String::as_str));
 
         let res = match Payment::parse_get_payment_sources_response(&payment_method, &response) {
             Ok(sources_json) => {
@@ -1074,10 +1059,9 @@ pub mod payment_command {
     fn execute(ctx: &CommandContext, params: &CommandParams) -> Result<(), ()> {
         trace!("execute >> ctx {:?} params {:?}", ctx, params);
 
-        let (pool_handle, pool_name) = ensure_connected_pool(&ctx)?;
         let (wallet_handle, _) = ensure_opened_wallet(&ctx)?;
         let submitter_did = get_active_did(&ctx);
-        let extra = get_opt_str_param("extra", params).map_err(error_err!())?;
+        let mut extra = get_opt_str_param("extra", params).map_err(error_err!())?.map(String::from);
         let send = get_opt_bool_param("send", params).map_err(error_err!())?.unwrap_or(SEND_REQUEST);
 
         let inputs = get_str_array_param("inputs", params).map_err(error_err!())?;
@@ -1086,10 +1070,15 @@ pub mod payment_command {
         let inputs = parse_payment_inputs(&inputs).map_err(error_err!())?;
         let outputs = parse_payment_outputs(&outputs).map_err(error_err!())?;
 
-        let (request, payment_method) = Payment::build_payment_req(wallet_handle, submitter_did.as_ref().map(String::as_str), &inputs, &outputs, extra)
+        if let Some((text, version, acc_mech_type, time_of_acceptance)) = get_transaction_author_info(&ctx) {
+            extra = Some(Payment::prepare_payment_extra_with_acceptance_data(extra.as_ref().map(String::as_str), Some(&text), Some(&version), None, &acc_mech_type, time_of_acceptance)
+                .map_err(|err| handle_payment_error(err, None))?);
+        }
+
+        let (request, payment_method) = Payment::build_payment_req(wallet_handle, submitter_did.as_ref().map(String::as_str), &inputs, &outputs, extra.as_ref().map(String::as_str))
             .map_err(|err| handle_payment_error(err, None))?;
 
-        let (response, _) = send_read_request!(&ctx, send, &request, pool_handle, &pool_name, submitter_did.as_ref().map(String::as_str));
+        let (response, _) = send_read_request!(&ctx, send, &request, submitter_did.as_ref().map(String::as_str));
 
         let res = match Payment::parse_payment_response(&payment_method, &response) {
             Ok(receipts_json) => {
@@ -1125,7 +1114,6 @@ pub mod get_fees_command {
     fn execute(ctx: &CommandContext, params: &CommandParams) -> Result<(), ()> {
         trace!("execute >> ctx {:?} params {:?}", ctx, params);
 
-        let (pool_handle, pool_name) = ensure_connected_pool(&ctx)?;
         let (wallet_handle, _) = ensure_opened_wallet(&ctx)?;
         let submitter_did = get_active_did(&ctx);
 
@@ -1135,7 +1123,7 @@ pub mod get_fees_command {
         let request = Payment::build_get_txn_fees_req(wallet_handle, submitter_did.as_ref().map(String::as_str), payment_method)
             .map_err(|err| handle_payment_error(err, Some(payment_method)))?;
 
-        let (response, _) = send_read_request!(&ctx, send, &request, pool_handle, &pool_name, submitter_did.as_ref().map(String::as_str));
+        let (response, _) = send_read_request!(&ctx, send, &request, submitter_did.as_ref().map(String::as_str));
 
         let res = match Payment::parse_get_txn_fees_response(&payment_method, &response) {
             Ok(fees_json) => {
@@ -1190,13 +1178,14 @@ pub mod mint_prepare_command {
 
         let extra = get_opt_str_param("extra", params).map_err(error_err!())?;
 
-        Payment::build_mint_req(wallet_handle, submitter_did.as_ref().map(String::as_str), &outputs, extra)
-            .map(|(request, _payment_method)| {
-                println_succ!("MINT transaction has been created:");
-                println!("     {}", request);
-                set_transaction(&ctx, Some(request));
-            })
+        let (mut request, _payment_method) = Payment::build_mint_req(wallet_handle, submitter_did.as_ref().map(String::as_str), &outputs, extra)
             .map_err(|err| handle_payment_error(err, None))?;
+
+        set_author_agreement(ctx, &mut request)?;
+
+        println_succ!("MINT transaction has been created:");
+        println!("     {}", request);
+        set_transaction(&ctx, Some(request));
 
         let res = Ok(());
         trace!("execute << {:?}", res);
@@ -1225,13 +1214,14 @@ pub mod set_fees_prepare_command {
 
         let fees = parse_payment_fees(&fees).map_err(error_err!())?;
 
-        Payment::build_set_txn_fees_req(wallet_handle, submitter_did.as_ref().map(String::as_str), &payment_method, &fees)
-            .map(|request| {
-                println_succ!("SET_FEES transaction has been created:");
-                println!("     {}", request);
-                set_transaction(&ctx, Some(request));
-            })
-            .map_err(|err| handle_payment_error(err, Some(payment_method)))?;
+        let mut request = Payment::build_set_txn_fees_req(wallet_handle, submitter_did.as_ref().map(String::as_str), &payment_method, &fees)
+            .map_err(|err| handle_payment_error(err, None))?;
+
+        set_author_agreement(ctx, &mut request)?;
+
+        println_succ!("SET_FEES transaction has been created:");
+        println!("     {}", request);
+        set_transaction(&ctx, Some(request));
 
         let res = Ok(());
         trace!("execute << {:?}", res);
@@ -1252,7 +1242,6 @@ pub mod verify_payment_receipt_command {
     fn execute(ctx: &CommandContext, params: &CommandParams) -> Result<(), ()> {
         trace!("execute >> ctx {:?} params {:?}", ctx, params);
 
-        let (pool_handle, pool_name) = ensure_connected_pool(&ctx)?;
         let (wallet_handle, _) = ensure_opened_wallet(&ctx)?;
         let submitter_did = get_active_did(&ctx);
 
@@ -1262,7 +1251,7 @@ pub mod verify_payment_receipt_command {
         let (request, payment_method) = Payment::build_verify_payment_req(wallet_handle, submitter_did.as_ref().map(String::as_str), receipt)
             .map_err(|err| handle_payment_error(err, None))?;
 
-        let (response, _) = send_read_request!(&ctx, send, &request, pool_handle, &pool_name, submitter_did.as_ref().map(String::as_str));
+        let (response, _) = send_read_request!(&ctx, send, &request, submitter_did.as_ref().map(String::as_str));
 
         let res = match Payment::parse_verify_payment_response(&payment_method, &response) {
             Ok(info_json) => {
@@ -1301,7 +1290,7 @@ pub mod sign_multi_command {
             println!("Transaction stored into context: {:?}.", txn_);
             println!("Would you like to use it? (y/n)");
 
-            let use_transaction = ::command_executor::wait_for_user_reply();
+            let use_transaction = ::command_executor::wait_for_user_reply(ctx);
 
             if !use_transaction {
                 return Ok(println!("No transaction has been signed."));
@@ -1347,8 +1336,8 @@ pub mod auth_rule_command {
                 .add_optional_param("new_value", "New value that can be used to fill the field")
                 .add_required_param("constraint", r#"Set of constraints required for execution of an action
          {
-             constraint_id - type of a constraint. Can be either "ROLE" to specify final constraint or  "AND"/"OR" to combine constraints.
-             role - role associated value {TRUSTEE: 0, STEWARD: 2, TRUST_ANCHOR: 101, NETWORK_MONITOR: 201, ANY: *}.
+             constraint_id - type of a constraint. Can be either "ROLE" to specify final constraint or  "AND"/"OR" to combine constraints, or "FORBIDDEN" to forbid action.
+             role - role associated value {TRUSTEE: 0, STEWARD: 2, TRUST_ANCHOR: 101, ENDORSER: 101, NETWORK_MONITOR: 201, ANY: *}.
              sig_count - the number of signatures required to execution action.
              need_to_be_owner - if user must be an owner of transaction.
              metadata - additional parameters of the constraint.
@@ -1362,13 +1351,13 @@ pub mod auth_rule_command {
                 .add_optional_param("send","Send the request to the Ledger (True by default). If false then created request will be printed and stored into CLI context.")
                 .add_example(r#"ledger auth-rule txn_type=NYM action=ADD field=role new_value=101 constraint="{"sig_count":1,"role":"0","constraint_id":"ROLE","need_to_be_owner":false}""#)
                 .add_example(r#"ledger auth-rule txn_type=NYM action=EDIT field=role old_value=101 new_value=0 constraint="{"sig_count":1,"role":"0","constraint_id":"ROLE","need_to_be_owner":false}""#)
+                .add_example(r#"ledger auth-rule txn_type=NYM action=ADD field=role new_value=101 constraint="{"constraint_id":"FORBIDDEN"}""#)
                 .finalize()
     );
 
     fn execute(ctx: &CommandContext, params: &CommandParams) -> Result<(), ()> {
         trace!("execute >> ctx {:?} params {:?}", ctx, params);
 
-        let (pool_handle, pool_name) = ensure_connected_pool(&ctx)?;
         let (wallet_handle, wallet_name) = ensure_opened_wallet(&ctx)?;
         let submitter_did = ensure_active_did(&ctx)?;
 
@@ -1380,13 +1369,11 @@ pub mod auth_rule_command {
         let constraint = get_str_param("constraint", params).map_err(error_err!())?;
         let send = get_opt_bool_param("send", params).map_err(error_err!())?.unwrap_or(SEND_REQUEST);
 
-        let mut request = Ledger::build_auth_rule_request(&submitter_did, txn_type, &action.to_uppercase(), field, old_value, new_value, constraint)
+        let request = Ledger::build_auth_rule_request(&submitter_did, txn_type, &action.to_uppercase(), field, old_value, new_value, constraint)
             .map_err(|err| handle_indy_error(err, None, None, None))?;
 
-        set_author_agreement(ctx, &mut request)?;
-
         let (_, mut response): (String, Response<serde_json::Value>) =
-            send_write_request!(ctx, send, &request, pool_handle, &pool_name, wallet_handle, &wallet_name, &submitter_did);
+            send_write_request!(ctx, send, &request, wallet_handle, &wallet_name, &submitter_did);
 
         if let Some(result) = response.result.as_mut() {
             result["txn"]["data"]["auth_type"] = get_txn_title(&result["txn"]["data"]["auth_type"]);
@@ -1410,6 +1397,55 @@ pub mod auth_rule_command {
     }
 }
 
+pub mod auth_rules_command {
+    use super::*;
+
+    command!(CommandMetadata::build("auth-rules", "Send AUTH_RULES request to change authentication rules for multiple ledger transactions.")
+                .add_main_param("rules", r#"A list of auth rules: [{"auth_type", "auth_action", "field", "old_value", "new_value"},{...}]"#)
+                .add_optional_param("send","Send the request to the Ledger (True by default). If false then created request will be printed and stored into CLI context.")
+                .add_example(r#"ledger auth-rules [{"auth_type":"1","auth_action":"ADD","field":"role","new_value":"101","constraint":{"sig_count":1,"role":"0","constraint_id":"ROLE","need_to_be_owner":false}}]"#)
+                .finalize()
+    );
+
+    fn execute(ctx: &CommandContext, params: &CommandParams) -> Result<(), ()> {
+        trace!("execute >> ctx {:?} params {:?}", ctx, params);
+
+        let (wallet_handle, wallet_name) = ensure_opened_wallet(&ctx)?;
+        let submitter_did = ensure_active_did(&ctx)?;
+
+        let rules = get_str_param("rules", params).map_err(error_err!())?;
+        let send = get_opt_bool_param("send", params).map_err(error_err!())?.unwrap_or(SEND_REQUEST);
+
+        let request = Ledger::build_auth_rules_request(&submitter_did, &rules)
+            .map_err(|err| handle_indy_error(err, None, None, None))?;
+
+        let (_, response): (String, Response<serde_json::Value>) =
+            send_write_request!(ctx, send, &request, wallet_handle, &wallet_name, &submitter_did);
+
+        let result = handle_transaction_response(response)?;
+        println!("result {:?}", result);
+
+        let rules: AuthRulesData = serde_json::from_value(result["txn"]["data"]["rules"].clone())
+            .map_err(|_| println_err!("Wrong data has been received"))?;
+        let res = print_auth_rules(rules);
+
+        trace!("execute << {:?}", res);
+        Ok(res)
+    }
+}
+
+pub type AuthRulesData = Vec<AuthRuleData>;
+
+#[derive(Deserialize, Debug)]
+pub struct AuthRuleData {
+    pub auth_type: String,
+    pub auth_action: String,
+    pub field: String,
+    pub old_value: Option<String>,
+    pub new_value: Option<String>,
+    pub constraint: serde_json::Value,
+}
+
 pub mod get_auth_rule_command {
     use super::*;
 
@@ -1430,7 +1466,6 @@ pub mod get_auth_rule_command {
     fn execute(ctx: &CommandContext, params: &CommandParams) -> Result<(), ()> {
         trace!("execute >> ctx {:?} params {:?}", ctx, params);
 
-        let (pool_handle, pool_name) = ensure_connected_pool(&ctx)?;
         let submitter_did = get_active_did(&ctx);
 
         let auth_type = get_opt_str_param("txn_type", params).map_err(error_err!())?;
@@ -1443,51 +1478,49 @@ pub mod get_auth_rule_command {
         let request = Ledger::build_get_auth_rule_request(submitter_did.as_ref().map(String::as_str), auth_type, auth_action, field, old_value, new_value)
             .map_err(|err| handle_indy_error(err, None, None, None))?;
 
-        let (_, response) = send_read_request!(&ctx, send, &request, pool_handle, &pool_name, submitter_did.as_ref().map(String::as_str));
+        let (_, response) = send_read_request!(&ctx, send, &request, submitter_did.as_ref().map(String::as_str));
 
         let result = handle_transaction_response(response)?;
 
-        let rules = match result["data"].as_object() {
-            Some(r) => r,
-            None => return Err(println_err!("Invalid data has been received"))
-        };
+        let rules: AuthRulesData = serde_json::from_value(result["data"].clone())
+            .map_err(|_| println_err!("Wrong data has been received"))?;
 
-        let constraints = rules
-            .iter()
-            .map(|(constraint_id, constraint)| {
-                let parts: Vec<&str> = constraint_id.split("--").collect();
-                let auth_type = get_txn_title(&serde_json::Value::String(parts.get(0).cloned().unwrap_or("-").to_string()));
-                let action = parts.get(1);
-                let field = parts.get(2);
-                let old_value = match action {
-                    Some(act) if *act == "ADD" => None,
-                    _ => parts.get(3),
-                };
-                let new_value = parts.get(4);
+        let res = print_auth_rules(rules);
 
-                json!({
+        trace!("execute << {:?}", res);
+        Ok(res)
+    }
+}
+
+fn print_auth_rules(rules: AuthRulesData) {
+    let constraints = rules
+        .into_iter()
+        .map(|rule| {
+            let auth_type = get_txn_title(&serde_json::Value::String(rule.auth_type.clone()));
+            let action = rule.auth_action;
+            let field = rule.field;
+            let old_value = if action == "ADD" { None } else { rule.old_value };
+            let new_value = rule.new_value;
+
+            json!({
                     "auth_type": auth_type,
                     "auth_action": action,
                     "field": field,
                     "old_value": old_value,
                     "new_value": new_value,
-                    "constraint": ::serde_json::to_string_pretty(&constraint).unwrap(),
+                    "constraint": ::serde_json::to_string_pretty(&rule.constraint).unwrap(),
                 })
-            })
-            .collect::<Vec<serde_json::Value>>();
+        })
+        .collect::<Vec<serde_json::Value>>();
 
-        let res = print_list_table(&constraints,
-                                   &vec![("auth_type", "Type"),
-                                         ("auth_action", "Action"),
-                                         ("field", "Field"),
-                                         ("old_value", "Old Value"),
-                                         ("new_value", "New Value"),
-                                         ("constraint", "Constraint")],
-                                   "There are no rules set");
-
-        trace!("execute << {:?}", res);
-        Ok(res)
-    }
+    print_list_table(&constraints,
+                               &vec![("auth_type", "Type"),
+                                     ("auth_action", "Action"),
+                                     ("field", "Field"),
+                                     ("old_value", "Old Value"),
+                                     ("new_value", "New Value"),
+                                     ("constraint", "Constraint")],
+                               "There are no rules set");
 }
 
 pub mod save_transaction_command {
@@ -1509,13 +1542,13 @@ pub mod save_transaction_command {
         println!("Transaction: {:?}.", transaction);
         println!("Would you like to save it? (y/n)");
 
-        let save_transaction = ::command_executor::wait_for_user_reply();
+        let save_transaction = ::command_executor::wait_for_user_reply(ctx);
 
         if !save_transaction {
             return Ok(println!("The transaction has not been saved."));
         }
 
-        _write_file(file, &transaction)
+        write_file(file, &transaction)
             .map_err(|err| println_err!("Cannot store transaction into the file: {:?}", err))?;
 
         println_succ!("The transaction has been saved.");
@@ -1548,7 +1581,8 @@ pub mod load_transaction_command {
 
         let file = get_str_param("file", params).map_err(error_err!())?;
 
-        let transaction = ::commands::common::read_file(file)?;
+        let transaction = read_file(file)
+            .map_err(|err| println_err!("{}", err))?;
 
         serde_json::from_str::<Request>(&transaction)
             .map_err(|err| println_err!("File contains invalid transaction: {:?}", err))?;
@@ -1564,27 +1598,158 @@ pub mod load_transaction_command {
     }
 }
 
-fn _write_file(file: &str, content: &str) -> Result<(), std::io::Error> {
-    let path = ::std::path::PathBuf::from(&file);
+pub mod taa_command {
+    use super::*;
 
-    if let Some(parent_path) = path.parent() {
-        ::std::fs::DirBuilder::new()
-            .recursive(true)
-            .create(parent_path).unwrap();
+    command!(CommandMetadata::build("txn-author-agreement", "Send Transaction Author Agreement to the ledger.")
+                .add_optional_param("text", "The content of a new agreement. Use empty to reset an active agreement")
+                .add_optional_param("file", "The path to file containing a content of agreement to send (an alternative to the `text` parameter)")
+                .add_required_param("version", "The version of a new agreement")
+                .add_optional_param("fees_inputs","The list of source inputs")
+                .add_optional_param("fees_outputs","The list of outputs in the following format: (recipient, amount)")
+                .add_optional_param("extra","Optional information for fees payment operation")
+                .add_optional_param("send","Send the request to the Ledger (True by default). If false then created request will be printed and stored into CLI context.")
+                .add_example("ledger txn-author-agreement text=\"Indy transaction agreement\" version=1")
+                .add_example("ledger txn-author-agreement text= version=1")
+                .add_example("ledger txn-author-agreement file=/home/agreement_content.txt version=1")
+                .add_example("ledger txn-author-agreement text=\"Indy transaction agreement\" version=1 send=false")
+                .add_example("ledger txn-author-agreement text=\"Indy transaction agreement\" version=1 fees_inputs=pay:null:111_rBuQo2A1sc9jrJg fees_outputs=(pay:null:FYmoFw55GeQH7SRFa37dkx1d2dZ3zUF8ckg7wmL7ofN4,100)")
+                .finalize()
+    );
+
+    fn execute(ctx: &CommandContext, params: &CommandParams) -> Result<(), ()> {
+        trace!("execute >> ctx {:?} params {:?}", ctx, params);
+
+        let (wallet_handle, wallet_name) = ensure_opened_wallet(&ctx)?;
+        let submitter_did = ensure_active_did(&ctx)?;
+
+        let text = get_opt_empty_str_param("text", params).map_err(error_err!())?;
+        let file = get_opt_str_param("file", params).map_err(error_err!())?;
+        let version = get_str_param("version", params).map_err(error_err!())?;
+        let fees_inputs = get_opt_str_array_param("fees_inputs", params).map_err(error_err!())?;
+        let fees_outputs = get_opt_str_tuple_array_param("fees_outputs", params).map_err(error_err!())?;
+        let extra = get_opt_str_param("extra", params).map_err(error_err!())?;
+        let send = get_opt_bool_param("send", params).map_err(error_err!())?.unwrap_or(SEND_REQUEST);
+
+        let text = match (text, file) {
+            (Some(text_), None) => text_.to_string(),
+            (None, Some(file_)) => {
+                read_file(file_)
+                    .map_err(|err| println_err!("{}", err))?
+            }
+            (Some(_), Some(_)) => return Err(println_err!("Only one of the parameters `text` and `file` can be specified")),
+            (None, None) => return Err(println_err!("Either `text` or `file` parameter must be specified"))
+        };
+
+        let mut request = Ledger::build_txn_author_agreement_request(&submitter_did, &text, &version)
+            .map_err(|err| handle_indy_error(err, None, None, None))?;
+
+        let payment_method = set_request_fees(&mut request, wallet_handle, Some(&submitter_did), &fees_inputs, &fees_outputs, extra)?;
+
+        let (response_json, response): (String, Response<serde_json::Value>) =
+            send_write_request!(ctx, send, &request, wallet_handle, &wallet_name, &submitter_did);
+
+        handle_transaction_response(response)
+            .map(|result| {
+                if text.is_empty() {
+                    set_transaction_author_info(ctx, None);
+                    println_succ!("Transaction Author Agreement has been reset.");
+                } else {
+                    print_transaction_response(result,
+                                               "Transaction Author Agreement has been sent to Ledger.",
+                                               None,
+                                               &[("text", "Text"),
+                                                   ("version", "Version")],
+                                               true);
+                    ::commands::pool::accept_transaction_author_agreement(ctx, &text, &version);
+                }
+            })?;
+
+        let receipts = parse_response_with_fees(&response_json, payment_method)?;
+
+        let res = print_response_receipts(receipts);
+
+        trace!("execute << {:?}", res);
+        res
     }
+}
 
-    let mut file =
-        ::std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(file).unwrap();
+pub mod aml_command {
+    use super::*;
 
-    file
-        .write_all(content.as_bytes())
+    command!(CommandMetadata::build("txn-acceptance-mechanisms", "Send TAA Acceptance Mechanisms to the ledger.")
+                .add_optional_param("aml", "The set of new acceptance mechanisms.")
+                .add_optional_param("file", "The path to file containing a set of acceptance mechanisms to send (an alternative to the text parameter).")
+                .add_required_param("version", "The version of a new set of acceptance mechanisms.")
+                .add_optional_param("context", "Common context information about acceptance mechanisms (may be a URL to external resource).")
+                .add_optional_param("fees_inputs","The list of source inputs")
+                .add_optional_param("fees_outputs","The list of outputs in the following format: (recipient, amount)")
+                .add_optional_param("extra","Optional information for fees payment operation")
+                .add_optional_param("send","Send the request to the Ledger (True by default). If false then created request will be printed and stored into CLI context.")
+                .add_example("ledger txn-acceptance-mechanisms aml={\"Click Agreement\":\"some description\"} version=1")
+                .add_example("ledger txn-acceptance-mechanisms file=/home/mechanism.txt version=1")
+                .add_example("ledger txn-acceptance-mechanisms aml={\"Click Agreement\":\"some description\"} version=1 context=\"some context\"")
+                .add_example("ledger txn-acceptance-mechanisms aml={\"Click Agreement\":\"some description\"} version=1 send=false")
+                .finalize()
+    );
+
+    fn execute(ctx: &CommandContext, params: &CommandParams) -> Result<(), ()> {
+        trace!("execute >> ctx {:?} params {:?}", ctx, params);
+
+        let (wallet_handle, wallet_name) = ensure_opened_wallet(&ctx)?;
+        let submitter_did = ensure_active_did(&ctx)?;
+
+        let aml = get_opt_str_param("aml", params).map_err(error_err!())?;
+        let file = get_opt_str_param("file", params).map_err(error_err!())?;
+        let version = get_str_param("version", params).map_err(error_err!())?;
+        let context = get_opt_str_param("context", params).map_err(error_err!())?;
+        let fees_inputs = get_opt_str_array_param("fees_inputs", params).map_err(error_err!())?;
+        let fees_outputs = get_opt_str_tuple_array_param("fees_outputs", params).map_err(error_err!())?;
+        let extra = get_opt_str_param("extra", params).map_err(error_err!())?;
+        let send = get_opt_bool_param("send", params).map_err(error_err!())?.unwrap_or(SEND_REQUEST);
+
+        let aml = match (aml, file) {
+            (Some(aml_), None) => aml_.to_string(),
+            (None, Some(file_)) => {
+                read_file(file_)
+                    .map_err(|err| println_err!("{}", err))?
+            }
+            (Some(_), Some(_)) => return Err(println_err!("Only one of the parameters `aml` and `file` can be specified")),
+            (None, None) => return Err(println_err!("Either `aml` or `file` parameter must be specified"))
+        };
+
+        let mut request = Ledger::build_acceptance_mechanisms_request(&submitter_did, &aml, &version, context)
+            .map_err(|err| handle_indy_error(err, None, None, None))?;
+
+        let payment_method = set_request_fees(&mut request, wallet_handle, Some(&submitter_did), &fees_inputs, &fees_outputs, extra)?;
+
+        let (response_json, response): (String, Response<serde_json::Value>) =
+            send_write_request!(ctx, send, &request, wallet_handle, &wallet_name, &submitter_did);
+
+        handle_transaction_response(response)
+            .map(|result| print_transaction_response(result,
+                                                     "Acceptance Mechanisms have been sent to Ledger.",
+                                                     None,
+                                                     &[("aml", "Text"),
+                                                         ("version", "Version"),
+                                                         ("amlContext", "Context")],
+                                                     true))?;
+
+        let receipts = parse_response_with_fees(&response_json, payment_method)?;
+
+        let res = print_response_receipts(receipts);
+
+        trace!("execute << {:?}", res);
+        res
+    }
 }
 
 pub fn set_author_agreement(ctx: &CommandContext, request: &mut String) -> Result<(), ()> {
     if let Some((text, version, acc_mech_type, time_of_acceptance)) = get_transaction_author_info(&ctx) {
+        if acc_mech_type.is_empty(){
+            return Err(println_err!("Transaction author agreement Acceptance Mechanism isn't set."));
+        }
+
         *request = Ledger::append_txn_author_agreement_acceptance_to_request(&request, Some(&text), Some(&version), None, &acc_mech_type, time_of_acceptance)
             .map_err(|err| handle_indy_error(err, None, None, None))?;
     };
@@ -1783,7 +1948,7 @@ fn get_role_title(role: &serde_json::Value) -> serde_json::Value {
     serde_json::Value::String(match role.as_str() {
         Some("0") => "TRUSTEE",
         Some("2") => "STEWARD",
-        Some("101") => "TRUST_ANCHOR",
+        Some("101") => "ENDORSER",
         Some("201") => "NETWORK_MONITOR",
         _ => "-"
     }.to_string())
@@ -1832,6 +1997,7 @@ pub fn get_active_transaction_author_agreement(_pool_handle: i32) -> Result<Opti
     let version = response["result"]["data"]["version"].as_str();
 
     match (text, version) {
+        (Some(text), _) if text.is_empty() => Ok(None),
         (Some(text), Some(version)) => Ok(Some((text.to_string(), version.to_string()))),
         _ => Ok(None)
     }
@@ -4112,7 +4278,7 @@ pub mod tests {
             let ctx = setup();
 
             let (_, path_str) = _path();
-            _write_file(&path_str, TRANSACTION).unwrap();
+            write_file(&path_str, TRANSACTION).unwrap();
 
             {
                 let cmd = load_transaction_command::new();
@@ -4134,7 +4300,7 @@ pub mod tests {
             let ctx = setup();
 
             let (_, path_str) = _path();
-            _write_file(&path_str, "some invalid transaction").unwrap();
+            write_file(&path_str, "some invalid transaction").unwrap();
 
             {
                 let cmd = load_transaction_command::new();
@@ -4159,6 +4325,31 @@ pub mod tests {
         }
     }
 
+    mod aml {
+        use super::*;
+
+        const AML: &str = r#"{"Acceptance Mechanism 1": "Description 1", "Acceptance Mechanism 2": "Description 2"}"#;
+
+        pub fn _get_version() -> String {
+            Utc::now().timestamp().to_string()
+        }
+
+        #[test]
+        pub fn acceptance_mechanisms_works() {
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
+            {
+                let cmd = aml_command::new();
+                let mut params = CommandParams::new();
+                params.insert("aml", AML.to_string());
+                params.insert("version", _get_version());
+                params.insert("context", "Some Context".to_string());
+                cmd.execute(&ctx, &params).unwrap();
+            }
+            tear_down_with_wallet_and_pool(&ctx);
+        }
+    }
+
     fn _path() -> (::std::path::PathBuf, String) {
         let mut path = ::utils::environment::EnvironmentUtils::indy_home_path();
         path.push("transaction");
@@ -4178,7 +4369,7 @@ pub mod tests {
     fn use_new_identity(ctx: &CommandContext) -> (String, String) {
         use_trustee(ctx);
         let (did, verkey) = create_new_did(ctx);
-        send_nym(ctx, &did, &verkey, Some("TRUST_ANCHOR"));
+        send_nym(ctx, &did, &verkey, Some("ENDORSER"));
         use_did(&ctx, &did);
         (did, verkey)
     }

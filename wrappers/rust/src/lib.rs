@@ -30,6 +30,7 @@ pub mod payments;
 pub mod pairwise;
 pub mod pool;
 pub mod wallet;
+pub mod cache;
 mod utils;
 
 use std::ffi::CString;
@@ -38,6 +39,24 @@ use std::ptr;
 use std::ffi::CStr;
 
 use failure::{Backtrace, Fail};
+
+pub use ffi::{
+    IndyHandle,
+    CommandHandle,
+    WalletHandle,
+    PoolHandle,
+    SearchHandle,
+    RecordHandle,
+    TailWriterHandle,
+    StorageHandle,
+    BlobStorageReaderHandle,
+    BlobStorageReaderCfgHandle,
+    MetadataHandle,
+    Timeout,
+    TailsWriterHandle,
+};
+
+pub use ffi::{INVALID_POOL_HANDLE, INVALID_WALLET_HANDLE};
 
 /// Set libindy runtime configuration. Can be optionally called to change current params.
 ///

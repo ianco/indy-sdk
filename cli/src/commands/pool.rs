@@ -303,20 +303,39 @@ pub mod delete_command {
     }
 }
 
+pub fn accept_transaction_author_agreement(ctx: &CommandContext, text: &str, version: &str) {
+    println!("Would you like to accept it? (y/n)");
+
+    let accept_agreement = wait_for_user_reply(ctx);
+
+    if !accept_agreement {
+        println_warn!("The Transaction Author Agreement has NOT been Accepted.");
+        println!("Use `pool show-taa` command to accept the Agreement.");
+        println!();
+        return;
+    }
+
+    println_succ!("Transaction Author Agreement has been accepted.");
+
+    let time_of_acceptance = Utc::now().timestamp() as u64;
+
+    set_transaction_author_info(ctx, Some((text.to_string(), version.to_string(), time_of_acceptance)));
+}
+
 pub fn set_transaction_author_agreement(ctx: &CommandContext, pool_handle: i32, ask_for_showing: bool) -> Result<Option<()>, ()> {
     if let Some((text, version)) = ledger::get_active_transaction_author_agreement(pool_handle)? {
         if ask_for_showing {
             println!();
-            println!("There is a transaction author agreement set on the connected Pool.");
+            println!("There is a Transaction Author Agreement set on the connected Pool.");
             println!("You should read and accept it to be able to send transactions to the Pool.");
-            println!("Either you can skip it and accept agreement later by calling `pool show-taa` command.");
+            println!("You can postpone accepting the Agreement. Accept it later by calling `pool show-taa` command");
             println!("Would you like to read it? (y/n)");
 
-            let read_agreement = wait_for_user_reply();
+            let read_agreement = wait_for_user_reply(ctx);
 
             if !read_agreement {
-                println_warn!("Transaction author agreement has NOT been Accepted.");
-                println!("Use `pool show-taa` command if you will need to accept a Pool agreement.");
+                println_warn!("The Transaction Author Agreement has NOT been Accepted.");
+                println!("Use `pool show-taa` command to accept the Agreement.");
                 println!();
                 return Ok(Some(()));
             }
@@ -325,22 +344,8 @@ pub fn set_transaction_author_agreement(ctx: &CommandContext, pool_handle: i32, 
         println!("Transaction Author Agreement");
         println!("Version: {:?}", version);
         println!("Content: \n {:?}", text);
-        println!("Would you like to accept it? (y/n)");
 
-        let accept_agreement = wait_for_user_reply();
-
-        if !accept_agreement {
-            println_warn!("Transaction author agreement has NOT been Accepted.");
-            println!("Use `pool show-taa` command if you will need to accept a Pool agreement.");
-            println!();
-            return Ok(Some(()));
-        }
-
-        println_succ!("Transaction Author Agreement has been accepted.");
-
-        let time_of_acceptance = Utc::now().timestamp() as u64;
-
-        set_transaction_author_info(ctx, Some((text, version, time_of_acceptance)));
+        accept_transaction_author_agreement(ctx, &text, &version);
 
         Ok(Some(()))
     } else {

@@ -7,7 +7,7 @@ use failure::Context;
 use errors::prelude::*;
 use services::ledger::merkletree::merkletree::MerkleTree;
 use services::pool::merkle_tree_factory;
-use services::pool::rust_base58::{FromBase58, ToBase58};
+use rust_base58::{FromBase58, ToBase58};
 use services::pool::types::{CatchupReq, Message};
 
 pub enum CatchupProgress {
@@ -22,9 +22,7 @@ pub enum CatchupProgress {
 }
 
 pub fn build_catchup_req(merkle: &MerkleTree, target_mt_size: usize) -> IndyResult<Option<(String, String)>> {
-    let txns_cnt = target_mt_size - merkle.count();
-
-    if txns_cnt <= 0 {
+    if merkle.count() >= target_mt_size  {
         warn!("No transactions to catch up!");
         return Ok(None);
     }

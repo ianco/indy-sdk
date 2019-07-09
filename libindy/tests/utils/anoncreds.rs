@@ -86,12 +86,25 @@ pub fn prover_create_credential_req(wallet_handle: i32, prover_did: &str, cred_o
     anoncreds::prover_create_credential_req(wallet_handle, prover_did, cred_offer_json, cred_def_json, master_secret_id).wait()
 }
 
+pub fn prover_set_credential_attr_tag_policy(wallet_handle: i32, cred_def_id: &str, tag_attrs_json: Option<&str>,
+                                             retroactive: bool) -> Result<(), IndyError> {
+    anoncreds::prover_set_credential_attr_tag_policy(wallet_handle, cred_def_id, tag_attrs_json, retroactive).wait()
+}
+
+pub fn prover_get_credential_attr_tag_policy(wallet_handle: i32, cred_def_id: &str) -> Result<String, IndyError> {
+    anoncreds::prover_get_credential_attr_tag_policy(wallet_handle, cred_def_id).wait()
+}
+
 pub fn prover_store_credential(wallet_handle: i32, cred_id: &str, cred_req_metadata_json: &str, cred_json: &str,
                                cred_def_json: &str, rev_reg_def_json: Option<&str>) -> Result<String, IndyError> {
     anoncreds::prover_store_credential(wallet_handle, Some(cred_id), cred_req_metadata_json, cred_json, cred_def_json, rev_reg_def_json).wait()
 }
 
-//TODO mark as depricated and use only in target tests
+pub fn prover_delete_credential(wallet_handle: i32, cred_id: &str) -> Result<(), IndyError> {
+    anoncreds::prover_delete_credential(wallet_handle, cred_id).wait()
+}
+
+//TODO mark as deprecated and use only in target tests
 pub fn prover_get_credentials(wallet_handle: i32, filter_json: &str) -> Result<String, IndyError> {
     anoncreds::prover_get_credentials(wallet_handle, Some(filter_json)).wait()
 }
@@ -112,7 +125,7 @@ pub fn prover_close_credentials_search(search_handle: i32) -> Result<(), IndyErr
     anoncreds::prover_close_credentials_search(search_handle).wait()
 }
 
-//TODO mark as depricated and use only in target tests
+//TODO mark as deprecated and use only in target tests
 pub fn prover_get_credentials_for_proof_req(wallet_handle: i32, proof_request_json: &str) -> Result<String, IndyError> {
     anoncreds::prover_get_credentials_for_proof_req(wallet_handle, proof_request_json).wait()
 }
@@ -762,12 +775,12 @@ pub fn tails_writer_config() -> String {
 pub fn init_common_wallet() -> (&'static str, &'static str, &'static str, &'static str) {
     lazy_static! {
                     static ref COMMON_WALLET_INIT: Once = ONCE_INIT;
-
-                }
+                 }
 
     unsafe {
         COMMON_WALLET_INIT.call_once(|| {
-            test::cleanup_storage();
+            // this name must match the one in ANONCREDS_WALLET_CONFIG
+            test::cleanup_storage("anoncreds_wallet");
 
             pool::set_protocol_version(PROTOCOL_VERSION).unwrap();
 
