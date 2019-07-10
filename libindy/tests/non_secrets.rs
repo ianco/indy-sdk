@@ -737,7 +737,7 @@ mod high_cases {
         use super::*;
 
         fn setup(name: &str, wallet_config: &str) -> i32{
-            init_non_secret_test_wallet(name, wallet_config);
+            init_non_secret_test_wallet(name, wallet_config, WALLET_CREDENTIALS);
             wallet::open_wallet(wallet_config, WALLET_CREDENTIALS).unwrap()
         }
 

@@ -5,10 +5,10 @@ use self::futures::Future;
 use serde_json;
 
 use indy::wallet;
-use utils;
 use utils::{test};
 use utils::constants::WALLET_CREDENTIALS;
 use utils::types::WalletRecord;
+use utils::wallet::override_wallet_config_creds;
 
 use std::sync::{Once, ONCE_INIT};
 use std::collections::HashMap;
@@ -117,13 +117,14 @@ pub fn record_5() -> WalletRecord {
     WalletRecord { id: ID_5.to_string(), type_: Some(TYPE.to_string()), value: Some(VALUE_5.to_string()), tags: Some(tags_5()) }
 }
 
-pub fn init_non_secret_test_wallet(name: &str, wallet_config: &str) {
+pub fn init_non_secret_test_wallet(name: &str, wallet_config: &str, wallet_credentials: &str) {
 
     test::cleanup_storage(name);
 
     //1. Create and Open wallet
-    wallet::create_wallet(wallet_config, WALLET_CREDENTIALS).wait().unwrap();
-    let wallet_handle = wallet::open_wallet(wallet_config, WALLET_CREDENTIALS).wait().unwrap();
+    let (wallet_config, wallet_credentials) = override_wallet_config_creds(wallet_config, wallet_credentials, true);
+    wallet::create_wallet(&wallet_config, &wallet_credentials).wait().unwrap();
+    let wallet_handle = wallet::open_wallet(&wallet_config, &wallet_credentials).wait().unwrap();
 
     let record_1 = record_1();
     add_wallet_record(wallet_handle,
@@ -171,6 +172,6 @@ pub fn populate_common_wallet_for_search() {
 
     COMMON_WALLET_INIT.call_once(|| {
         const SEARCH_WALLET_CONFIG: &str = r#"{"id":"common_non_secret_wallet"}"#;
-        init_non_secret_test_wallet("common_non_secret_wallet", SEARCH_WALLET_CONFIG)
+        init_non_secret_test_wallet("common_non_secret_wallet", SEARCH_WALLET_CONFIG, WALLET_CREDENTIALS)
     });
 }
