@@ -24,12 +24,12 @@ RUN echo "deb https://repo.sovrin.org/deb xenial $indy_stream" >> /etc/apt/sourc
 
 RUN useradd -ms /bin/bash -u $uid indy
 
-ARG indy_plenum_ver=1.9.0~dev826
-ARG indy_node_ver=1.9.0~dev1009
+ARG indy_plenum_ver=1.9.0~dev836
+ARG indy_node_ver=1.9.0~dev1025
 ARG python3_indy_crypto_ver=0.4.5
 ARG indy_crypto_ver=0.4.5
 
-RUN apt-get update -y && apt-get install -y --allow-unauthenticated \
+RUN apt-get update -y && apt-get install -y \
         indy-plenum=${indy_plenum_ver} \
         indy-node=${indy_node_ver} \
         python3-indy-crypto=${python3_indy_crypto_ver} \
