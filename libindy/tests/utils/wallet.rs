@@ -315,6 +315,7 @@ pub fn override_wallet_config_creds(config: &str, credentials: &str, load_dynali
                 Ok(var) => {
                     match var.to_lowercase().as_ref() {
                         "postgres" => postgres_lib_test_overrides(),
+                        "postgres_multi" => postgres_multi_lib_test_overrides(),
                         _ => wallet_storage_overrides()
                     }
                 },
@@ -506,6 +507,21 @@ pub fn postgres_lib_test_overrides() -> HashMap<String, Option<String>> {
     let mut storage_config = HashMap::new();
     let env_vars = vec!["STG_CONFIG", "STG_CREDS", "STG_TYPE", "STG_LIB", "STG_INIT"];
     storage_config.insert(env_vars[0].to_string(), Some(r#"{"url":"localhost:5432"}"#.to_string()));
+    storage_config.insert(env_vars[1].to_string(), Some(r#"{"account":"postgres","password":"mysecretpassword","admin_account":"postgres","admin_password":"mysecretpassword"}"#.to_string()));
+    storage_config.insert(env_vars[2].to_string(), Some("postgres_storage".to_string()));
+    storage_config.insert(env_vars[3].to_string(), Some(osfile.to_string()));
+    storage_config.insert(env_vars[4].to_string(), Some("postgresstorage_init".to_string()));
+    storage_config
+}
+
+pub fn postgres_multi_lib_test_overrides() -> HashMap<String, Option<String>> {
+    // Note - libraries be in the directories in LD_LIBRARY_PATH, e.g.:
+    //      export LD_LIBRARY_PATH=../samples/storage/storage-inmem/target/debug/:./target/debug/
+    let osfile = get_postgres_storage_plugin();
+
+    let mut storage_config = HashMap::new();
+    let env_vars = vec!["STG_CONFIG", "STG_CREDS", "STG_TYPE", "STG_LIB", "STG_INIT"];
+    storage_config.insert(env_vars[0].to_string(), Some(r#"{"url":"localhost:5432", "wallet_scheme":"MultiWalletSingleTable"}"#.to_string()));
     storage_config.insert(env_vars[1].to_string(), Some(r#"{"account":"postgres","password":"mysecretpassword","admin_account":"postgres","admin_password":"mysecretpassword"}"#.to_string()));
     storage_config.insert(env_vars[2].to_string(), Some("postgres_storage".to_string()));
     storage_config.insert(env_vars[3].to_string(), Some(osfile.to_string()));
