@@ -836,18 +836,18 @@ mod medium_cases {
 
         #[test]
         fn indy_register_storage_plugin_library() {
-            let stg_type = "posgres_storage";
-            let initializer = "postgresstorage_init";
-            let library = wallet::get_postgres_storage_plugin();
-            let res = wallet::load_storage_library(stg_type, &library[..], initializer).unwrap();
-            assert_eq!((), res);
-
             // setup cofiguration for a postgres wallet
             let wallet_config = "{\"id\": \"wallet_1\"}";
             let wallet_creds = "{\"key\": \"8dvfYSt5d1taSd6yJdpjq4emkwsPDDLYxkNFysFD2cZY\", \"key_derivation_method\": \"RAW\"}";
             let postgres_overrides = wallet::postgres_lib_test_overrides();
-            let new_config = wallet::override_wallet_configuration(&wallet_config, &postgres_overrides);
-            let new_creds = wallet::override_wallet_credentials(&wallet_creds, &postgres_overrides);
+            let (new_config, new_stg_config) = wallet::override_wallet_configuration(&wallet_config, &postgres_overrides);
+            let (new_creds, new_stg_creds) = wallet::override_wallet_credentials(&wallet_creds, &postgres_overrides);
+
+            let stg_type = "posgres_storage";
+            let initializer = "postgresstorage_init";
+            let library = wallet::get_postgres_storage_plugin();
+            let res = wallet::load_storage_library(stg_type, &library[..], initializer, &new_stg_config, &new_stg_creds).unwrap();
+            assert_eq!((), res);
 
             // run through some wallet CRUD
             wallet::create_wallet(&new_config, &new_creds).unwrap();

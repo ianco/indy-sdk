@@ -327,15 +327,15 @@ pub fn override_wallet_config_creds(config: &str, credentials: &str, load_dynali
                 return (config.to_owned(), credentials.to_owned());
             }
 
+            // update config and credentials
+            let (config, stg_config) = override_wallet_configuration(config, &storage_config);
+            let (credentials, stg_credentials) = override_wallet_credentials(credentials, &storage_config);
+
             // load dynamic library if requested
             if load_dynalib {
                 // TODO ignore error (for now)
-                let _ = load_storage_library_config(&storage_config); //.unwrap();
+                let _ = load_storage_library_config(&storage_config, &stg_config, &stg_credentials); //.unwrap();
             }
-
-            // update config and credentials
-            let config = override_wallet_configuration(config, &storage_config);
-            let credentials = override_wallet_credentials(credentials, &storage_config);
 
             return (config, credentials);
         },
@@ -348,7 +348,7 @@ pub fn override_wallet_config_creds(config: &str, credentials: &str, load_dynali
 /*
  * Dynamically loads the specified library and registers storage, based on provided config
  */
-pub fn load_storage_library_config(storage_config: &HashMap<String, Option<String>>) -> Result<(), ()> {
+pub fn load_storage_library_config(storage_config: &HashMap<String, Option<String>>, config: &str, credentials: &str) -> Result<(), ()> {
     match storage_config.get("STG_LIB") {
         Some(slibrary) => match slibrary {
             Some(library) => {
@@ -366,7 +366,7 @@ pub fn load_storage_library_config(storage_config: &HashMap<String, Option<Strin
                     },
                     None => "".to_string()
                 };
-                load_storage_library(&stg_type[..], &library[..], &initializer[..])
+                load_storage_library(&stg_type[..], &library[..], &initializer[..], config, credentials)
             },
             None => Ok(())
         },
@@ -377,8 +377,7 @@ pub fn load_storage_library_config(storage_config: &HashMap<String, Option<Strin
 /*
  * Dynamically loads the specified library and registers storage
  */
-pub fn load_storage_library(_stg_type: &str, library: &str, initializer: &str) -> Result<(), ()> {
-    println!("Loading {} {} {}", _stg_type, library, initializer);
+pub fn load_storage_library(_stg_type: &str, library: &str, initializer: &str, config: &str, credentials: &str) -> Result<(), ()> {
     let lib_res = _load_lib(library);
     match lib_res {
         Ok(lib) => {
@@ -389,6 +388,19 @@ pub fn load_storage_library(_stg_type: &str, library: &str, initializer: &str) -
                     ErrorCode::Success => println!("Plugin has been loaded: \"{}\"", library),
                     _ => return Err(println!("Plugin has not been loaded: \"{}\"", library))
                 }
+
+                // call the one-time storage init() method to initialize storage
+                let init_storage_func: libloading::Symbol<unsafe extern fn(config: *const c_char, credentials: *const c_char) -> ErrorCode> = lib.get("init_storagetype".as_bytes()).unwrap();
+
+                let config = CString::new(config).expect("CString::new failed");
+                let credentials = CString::new(credentials).expect("CString::new failed");
+
+                let err = init_storage_func(config.as_ptr(), credentials.as_ptr());
+
+                if err != ErrorCode::Success {
+                    return Err(println!("Error init_storage returned an error {:?}", err));
+                }
+                println!("Called init_storagetype() function successfully");
             }
         },
         Err(_) => return Err(println!("Plugin has not been loaded: \"{}\"", library))
@@ -411,7 +423,7 @@ fn _load_lib(library: &str) -> libloading::Result<libloading::Library> {
 /*
  * Update the given configuration string based on supplied overrides
  */
-pub fn override_wallet_configuration(config: &str, overrides: &HashMap<String, Option<String>>) -> String {
+pub fn override_wallet_configuration(config: &str, overrides: &HashMap<String, Option<String>>) -> (String, String) {
     let mut config: Config = serde_json::from_str(config).unwrap();
 
     match overrides.get("STG_TYPE") {
@@ -434,13 +446,18 @@ pub fn override_wallet_configuration(config: &str, overrides: &HashMap<String, O
         None => ()
     }
 
-    serde_json::to_string(&config).unwrap()
+    let config_str = serde_json::to_string(&config).unwrap();
+    let storage_config_str = match config.storage_config {
+        Some(s) => serde_json::to_string(&s).unwrap(),
+        None => "{}".to_string()
+    };
+    (config_str, storage_config_str)
 }
 
 /*
  * Update the given credentials string based on supplied overrides
  */
-pub fn override_wallet_credentials(creds: &str, overrides: &HashMap<String, Option<String>>) -> String {
+pub fn override_wallet_credentials(creds: &str, overrides: &HashMap<String, Option<String>>) -> (String, String) {
     let mut creds: Credentials = serde_json::from_str(creds).unwrap();
 
     match overrides.get("STG_CREDS") {
@@ -454,7 +471,12 @@ pub fn override_wallet_credentials(creds: &str, overrides: &HashMap<String, Opti
         None => ()
     }
 
-    serde_json::to_string(&creds).unwrap()
+    let credentials_str = serde_json::to_string(&creds).unwrap();
+    let storage_credentials_str = match creds.storage_credentials {
+        Some(s) => serde_json::to_string(&s).unwrap(),
+        None => "{}".to_string()
+    };
+    (credentials_str, storage_credentials_str)
 }
 
 /*
