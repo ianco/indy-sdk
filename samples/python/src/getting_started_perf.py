@@ -12,6 +12,7 @@ from os.path import dirname
 
 import random
 import string
+import asyncio
 
 from indy.error import ErrorCode, IndyError
 
@@ -64,9 +65,12 @@ if args.storage_type:
 async def run():
     logger.warning("Getting started -> started")
 
-    alice_loop_count = 10
-    alice_thread_count = 1
-    rev_reg_max_cred_count = (alice_loop_count * alice_thread_count) + 100
+    alice_cred_count = 10
+    alice_thread_count = 2
+    max_processing_time = 20 * 60
+    rev_reg_max_cred_count = alice_cred_count + 100
+    loop = asyncio.get_event_loop()
+    tasks = []
 
     pool_ = {
         'name': 'pool1'
@@ -297,9 +301,30 @@ async def run():
     await ledger.sign_and_submit_request(acme['pool'], acme['wallet'], acme['did'], acme['revoc_reg_entry_request'])
 
     # loop for multiple alice's
-    for i_alice in range(alice_loop_count):
+    i_alice = 0
+    cred_count_remaining = alice_cred_count
+    start_time = time.perf_counter()
+    processing_time = 0
+    processed_count = 0
+    max_processing_time = 10 * 60
+
+    while 0 < cred_count_remaining and processing_time < max_processing_time:
         unique_str = random_str(16)
-        await run_alice_credential_loop(i_alice+1, alice_loop_count, unique_str, pool_, faber, acme, thrift)
+
+        creds_task = loop.create_task(run_alice_credential_loop(i_alice+1, alice_cred_count, unique_str, pool_, faber, acme, thrift))
+        tasks.append(creds_task)
+        i_alice = i_alice + 1
+        cred_count_remaining = cred_count_remaining - 1
+        processing_time = time.perf_counter() - start_time
+
+        # multi-threaded, check if we are within alice_thread_count active requests
+        active_tasks = len([task for task in tasks if not task.done()])
+        print("Added task - active = ", active_tasks)
+        while active_tasks >= alice_thread_count:
+            #await asyncio.gather(*tasks)
+            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            active_tasks = len(pending)
+            #print("Waited task - active = ", active_tasks)
 
     logger.info(" \"Sovrin Steward\" -> Close and Delete wallet")
     await wallet.close_wallet(steward['wallet'])
