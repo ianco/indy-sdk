@@ -66,9 +66,9 @@ async def run():
     logger.warning("Getting started -> started")
 
     alice_cred_count = 10
-    alice_thread_count = 2
+    alice_thread_count = 5
     max_processing_time = 20 * 60
-    rev_reg_max_cred_count = alice_cred_count + 100
+    rev_reg_max_cred_count = alice_cred_count + 20
     loop = asyncio.get_event_loop()
     tasks = []
 
@@ -306,7 +306,6 @@ async def run():
     start_time = time.perf_counter()
     processing_time = 0
     processed_count = 0
-    max_processing_time = 10 * 60
 
     while 0 < cred_count_remaining and processing_time < max_processing_time:
         unique_str = random_str(16)
@@ -325,6 +324,13 @@ async def run():
             done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             active_tasks = len(pending)
             #print("Waited task - active = ", active_tasks)
+
+    # wait for the current batch of taska to complete
+    for response in await asyncio.gather(*tasks):
+        pass # print('response:' + response)
+    tasks = []
+    processing_time = time.perf_counter() - start_time
+    logger.warning("Completed Alice loop, time = {}".format(processing_time))
 
     logger.info(" \"Sovrin Steward\" -> Close and Delete wallet")
     await wallet.close_wallet(steward['wallet'])
@@ -354,7 +360,7 @@ async def run():
     await pool.close_pool_ledger(pool_['handle'])
     await pool.delete_pool_ledger_config(pool_['name'])
 
-    logger.info("Getting started -> done")
+    logger.warning("Getting started -> done")
 
 
 async def onboarding(_from, to):
@@ -600,11 +606,11 @@ async def run_alice_credential_loop(i, j, unique_str, pool_in, faber_in, acme_in
     acme = acme_in.copy()
     thrift = thrift_in.copy()
 
-    logger.warning("==============================")
+    #logger.warning("==============================")
     logger.warning("=== Getting Transcript with Faber ==")
-    logger.warning("==============================")
-    logger.warning("== Getting Transcript with Faber - Onboarding ==")
-    logger.warning("------------------------------")
+    #logger.warning("==============================")
+    #logger.warning("== Getting Transcript with Faber - Onboarding ==")
+    #logger.warning("------------------------------")
 
     alice = {
         'name': 'Alice'+unique_str,
@@ -615,9 +621,9 @@ async def run_alice_credential_loop(i, j, unique_str, pool_in, faber_in, acme_in
     faber['did_for_alice'], faber['key_for_alice'], alice['did_for_faber'], alice['key_for_faber'], \
     faber['alice_connection_response'] = await onboarding(faber, alice)
 
-    logger.warning("==============================")
-    logger.warning("== Getting Transcript with Faber - Getting Transcript Credential ==")
-    logger.warning("------------------------------")
+    #logger.warning("==============================")
+    #logger.warning("== Getting Transcript with Faber - Getting Transcript Credential ==")
+    #logger.warning("------------------------------")
 
     #logger.info("\"Faber\" -> Create \"Transcript\" Credential Offer for Alice")
     faber['transcript_cred_offer'] = \
@@ -700,11 +706,11 @@ async def run_alice_credential_loop(i, j, unique_str, pool_in, faber_in, acme_in
     await anoncreds.prover_store_credential(alice['wallet'], None, alice['transcript_cred_request_metadata'],
                                             alice['transcript_cred'], alice['transcript_cred_def'], None)
 
-    logger.warning("==============================")
+    #logger.warning("==============================")
     logger.warning("=== Apply for the job with Acme ==")
-    logger.warning("==============================")
-    logger.warning("== Apply for the job with Acme - Onboarding ==")
-    logger.warning("------------------------------")
+    #logger.warning("==============================")
+    #logger.warning("== Apply for the job with Acme - Onboarding ==")
+    #logger.warning("------------------------------")
 
     acme['did_for_alice'], acme['key_for_alice'], alice['did_for_acme'], alice['key_for_acme'], \
     acme['alice_connection_response'] = await onboarding(acme, alice)
@@ -853,7 +859,7 @@ async def run_alice_credential_loop(i, j, unique_str, pool_in, faber_in, acme_in
                                                 acme['revoc_regs_for_job_application'])
 
     #logger.info("==============================")
-    #logger.info("== Apply for the job with Acme - Getting Job-Certificate Credential ==")
+    logger.warning("== Apply for the job with Acme - Getting Job-Certificate Credential ==")
     #logger.info("------------------------------")
 
     #logger.info("\"Acme\" -> Create \"Job-Certificate\" Credential Offer for Alice")
@@ -946,11 +952,11 @@ async def run_alice_credential_loop(i, j, unique_str, pool_in, faber_in, acme_in
                                             alice['job_certificate_cred'],
                                             alice['acme_job_certificate_cred_def'], alice['acme_revoc_reg_def_json'])
 
-    logger.warning("==============================")
+    #logger.warning("==============================")
     logger.warning("=== Apply for the loan with Thrift ==")
-    logger.warning("==============================")
-    logger.warning("== Apply for the loan with Thrift - Onboarding ==")
-    logger.warning("------------------------------")
+    #logger.warning("==============================")
+    #logger.warning("== Apply for the loan with Thrift - Onboarding ==")
+    #logger.warning("------------------------------")
 
     thrift['did_for_alice'], thrift['key_for_alice'], alice['did_for_thrift'], alice['key_for_thrift'], \
     thrift['alice_connection_response'] = await onboarding(thrift, alice)
@@ -1084,7 +1090,7 @@ async def run_alice_credential_loop(i, j, unique_str, pool_in, faber_in, acme_in
                                                 thrift['revoc_regs_for_loan_app'])
 
     #logger.info("==============================")
-    #logger.info("== Apply for the loan with Thrift - Transcript and Job-Certificate proving  ==")
+    logger.warning("== Apply for the loan with Thrift - Transcript and Job-Certificate proving  ==")
     #logger.info("------------------------------")
 
     #logger.info("\"Thrift\" -> Create \"Loan-Application-KYC\" Proof Request")
@@ -1193,9 +1199,9 @@ async def run_alice_credential_loop(i, j, unique_str, pool_in, faber_in, acme_in
 
     #logger.info("==============================")
 
-    logger.warning("==============================")
+    #logger.warning("==============================")
     logger.warning("== Credential revocation - Acme revokes Alice's Job-Certificate  ==")
-    logger.warning("------------------------------")
+    #logger.warning("------------------------------")
 
     #logger.info("\"Acme\" - Revoke  credential")
     acme['alice_cert_rev_reg_delta'] = \
@@ -1212,9 +1218,9 @@ async def run_alice_credential_loop(i, j, unique_str, pool_in, faber_in, acme_in
 
     #logger.info("==============================")
 
-    logger.warning("==============================")
+    #logger.warning("==============================")
     logger.warning("== Apply for the loan with Thrift again - Job-Certificate proving  ==")
-    logger.warning("------------------------------")
+    #logger.warning("------------------------------")
 
     await apply_loan_basic()
 
@@ -1225,7 +1231,7 @@ async def run_alice_credential_loop(i, j, unique_str, pool_in, faber_in, acme_in
                                                     thrift['revoc_defs_for_loan_app'],
                                                     thrift['revoc_regs_for_loan_app'])
 
-    logger.warning("==============================")
+    #logger.warning("==============================")
 
     logger.warning("\"Alice\" -> Close wallet")
     await wallet.close_wallet(alice['wallet'])
