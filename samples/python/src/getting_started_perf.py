@@ -65,10 +65,10 @@ if args.storage_type:
 async def run():
     logger.warning("Getting started -> started")
 
-    alice_cred_count = 10
-    alice_thread_count = 5
-    max_processing_time = 20 * 60
-    rev_reg_max_cred_count = alice_cred_count + 20
+    alice_cred_count = 100
+    alice_thread_count = 1
+    max_processing_time = 60 * 60
+    rev_reg_max_cred_count = 10 # alice_cred_count + 20
     loop = asyncio.get_event_loop()
     tasks = []
 
@@ -315,6 +315,7 @@ async def run():
         i_alice = i_alice + 1
         cred_count_remaining = cred_count_remaining - 1
         processing_time = time.perf_counter() - start_time
+        logger.warning("... time = {}".format(processing_time))
 
         # multi-threaded, check if we are within alice_thread_count active requests
         active_tasks = len([task for task in tasks if not task.done()])
@@ -612,6 +613,7 @@ async def run_alice_credential_loop(i, j, unique_str, pool_in, faber_in, acme_in
     #logger.warning("== Getting Transcript with Faber - Onboarding ==")
     #logger.warning("------------------------------")
 
+    start_time = time.perf_counter()
     alice = {
         'name': 'Alice'+unique_str,
         'wallet_config': json.dumps({'id': 'alice_wallet'+unique_str}),
@@ -620,6 +622,7 @@ async def run_alice_credential_loop(i, j, unique_str, pool_in, faber_in, acme_in
     }
     faber['did_for_alice'], faber['key_for_alice'], alice['did_for_faber'], alice['key_for_faber'], \
     faber['alice_connection_response'] = await onboarding(faber, alice)
+    onboarding_time = time.perf_counter() - start_time
 
     #logger.warning("==============================")
     #logger.warning("== Getting Transcript with Faber - Getting Transcript Credential ==")
@@ -682,10 +685,12 @@ async def run_alice_credential_loop(i, j, unique_str, pool_in, faber_in, acme_in
         "year": {"raw": "2015", "encoded": "2015"},
         "average": {"raw": "5", "encoded": "5"}
     })
+    start_time = time.perf_counter()
     faber['transcript_cred'], _, _ = \
         await anoncreds.issuer_create_credential(faber['wallet'], faber['transcript_cred_offer'],
                                                 faber['transcript_cred_request'],
                                                 faber['alice_transcript_cred_values'], None, None)
+    create_cred_time = time.perf_counter() - start_time
 
     #logger.info("\"Faber\" -> Authcrypt \"Transcript\" Credential for Alice")
     faber['authcrypted_transcript_cred'] = \
@@ -703,20 +708,24 @@ async def run_alice_credential_loop(i, j, unique_str, pool_in, faber_in, acme_in
     _, alice['transcript_cred_def'] = await get_cred_def(alice['pool'], alice['did_for_faber'],
                                                         alice['transcript_cred_def_id'])
 
+    start_time = time.perf_counter()
     await anoncreds.prover_store_credential(alice['wallet'], None, alice['transcript_cred_request_metadata'],
                                             alice['transcript_cred'], alice['transcript_cred_def'], None)
+    store_cred_time = time.perf_counter() - start_time
 
     #logger.warning("==============================")
     logger.warning("=== Apply for the job with Acme ==")
     #logger.warning("==============================")
-    #logger.warning("== Apply for the job with Acme - Onboarding ==")
+    logger.warning("== Apply for the job with Acme - Onboarding ==")
     #logger.warning("------------------------------")
 
+    start_time = time.perf_counter()
     acme['did_for_alice'], acme['key_for_alice'], alice['did_for_acme'], alice['key_for_acme'], \
     acme['alice_connection_response'] = await onboarding(acme, alice)
+    onboarding_2_time = time.perf_counter() - start_time
 
     #logger.info("==============================")
-    #logger.info("== Apply for the job with Acme - Transcript proving ==")
+    logger.info("== Apply for the job with Acme - Transcript proving ==")
     #logger.info("------------------------------")
 
     #logger.info("\"Acme\" -> Create \"Job-Application\" Proof Request")
@@ -775,6 +784,7 @@ async def run_alice_credential_loop(i, j, unique_str, pool_in, faber_in, acme_in
 
     #logger.info("\"Alice\" -> Get credentials for \"Job-Application\" Proof Request")
 
+    start_time = time.perf_counter()
     search_for_job_application_proof_request = \
         await anoncreds.prover_search_credentials_for_proof_req(alice['wallet'],
                                                                 alice['job_application_proof_request'], None)
@@ -788,6 +798,7 @@ async def run_alice_credential_loop(i, j, unique_str, pool_in, faber_in, acme_in
         await get_credential_for_referent(search_for_job_application_proof_request, 'predicate1_referent')
 
     await anoncreds.prover_close_credentials_search_for_proof_req(search_for_job_application_proof_request)
+    search_proof_time = time.perf_counter() - start_time
 
     alice['creds_for_job_application_proof'] = {cred_for_attr1['referent']: cred_for_attr1,
                                                 cred_for_attr2['referent']: cred_for_attr2,
@@ -801,7 +812,7 @@ async def run_alice_credential_loop(i, j, unique_str, pool_in, faber_in, acme_in
         await prover_get_entities_from_ledger(alice['pool'], alice['did_for_acme'],
                                             alice['creds_for_job_application_proof'], alice['name'])
 
-    #logger.info("\"Alice\" -> Create \"Job-Application\" Proof")
+    logger.warning("\"Alice\" -> Create \"Job-Application\" Proof")
     alice['job_application_requested_creds'] = json.dumps({
         'self_attested_attributes': {
             'attr1_referent': 'Alice',
@@ -816,12 +827,14 @@ async def run_alice_credential_loop(i, j, unique_str, pool_in, faber_in, acme_in
         'requested_predicates': {'predicate1_referent': {'cred_id': cred_for_predicate1['referent']}}
     })
 
+    start_time = time.perf_counter()
     alice['job_application_proof'] = \
         await anoncreds.prover_create_proof(alice['wallet'], alice['job_application_proof_request'],
                                             alice['job_application_requested_creds'], alice['master_secret_id'],
                                             alice['schemas_for_job_application'],
                                             alice['cred_defs_for_job_application'],
                                             alice['revoc_states_for_job_application'])
+    create_proof_time = time.perf_counter() - start_time
 
     #logger.info("\"Alice\" -> Authcrypt \"Job-Application\" Proof for Acme")
     alice['authcrypted_job_application_proof'] = \
@@ -835,12 +848,14 @@ async def run_alice_credential_loop(i, j, unique_str, pool_in, faber_in, acme_in
     _, acme['job_application_proof'], decrypted_job_application_proof = \
         await auth_decrypt(acme['wallet'], acme['key_for_alice'], acme['authcrypted_job_application_proof'])
 
+    start_time = time.perf_counter()
     acme['schemas_for_job_application'], acme['cred_defs_for_job_application'], \
     acme['revoc_ref_defs_for_job_application'], acme['revoc_regs_for_job_application'] = \
         await verifier_get_entities_from_ledger(acme['pool'], acme['did'],
                                                 decrypted_job_application_proof['identifiers'], acme['name'])
+    verify_get_entities_time = time.perf_counter() - start_time
 
-    #logger.info("\"Acme\" -> Verify \"Job-Application\" Proof from Alice")
+    logger.warning("\"Acme\" -> Verify \"Job-Application\" Proof from Alice")
     assert 'Bachelor of Science, Marketing' == \
         decrypted_job_application_proof['requested_proof']['revealed_attrs']['attr3_referent']['raw']
     assert 'graduated' == \
@@ -852,12 +867,15 @@ async def run_alice_credential_loop(i, j, unique_str, pool_in, faber_in, acme_in
     assert 'Garcia' == decrypted_job_application_proof['requested_proof']['self_attested_attrs']['attr2_referent']
     assert '123-45-6789' == decrypted_job_application_proof['requested_proof']['self_attested_attrs']['attr6_referent']
 
+    start_time = time.perf_counter()
     assert await anoncreds.verifier_verify_proof(acme['job_application_proof_request'], acme['job_application_proof'],
                                                 acme['schemas_for_job_application'],
                                                 acme['cred_defs_for_job_application'],
                                                 acme['revoc_ref_defs_for_job_application'],
                                                 acme['revoc_regs_for_job_application'])
+    verify_proof_time = time.perf_counter() - start_time
 
+    """
     #logger.info("==============================")
     logger.warning("== Apply for the job with Acme - Getting Job-Certificate Credential ==")
     #logger.info("------------------------------")
@@ -1232,10 +1250,13 @@ async def run_alice_credential_loop(i, j, unique_str, pool_in, faber_in, acme_in
                                                     thrift['revoc_regs_for_loan_app'])
 
     #logger.warning("==============================")
-
+    """
     logger.warning("\"Alice\" -> Close wallet")
     await wallet.close_wallet(alice['wallet'])
 
+    logger.warning("Times: onboarding:{} {} create:{} store:{} search:{} create:{} verify:{} verify:{}".format(
+        onboarding_time, onboarding_2_time, create_cred_time, store_cred_time, search_proof_time, create_proof_time, verify_get_entities_time, verify_proof_time
+        ))
 
 if __name__ == '__main__':
     run_coroutine(run)
