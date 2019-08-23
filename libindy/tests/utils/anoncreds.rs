@@ -11,6 +11,7 @@ use utils::types::CredentialOfferInfo;
 use std::sync::{Once, ONCE_INIT};
 use std::mem;
 use utils::constants::*;
+use std::time::Instant;
 
 use std::collections::{HashSet, HashMap};
 
@@ -25,6 +26,9 @@ pub static mut CREDENTIAL_DEF_JSON: &'static str = "";
 pub static mut CREDENTIAL_OFFER_JSON: &'static str = "";
 pub static mut CREDENTIAL_REQUEST_JSON: &'static str = "";
 pub static mut CREDENTIAL_JSON: &'static str = "";
+pub static mut ISSUER1_GVT_CRED_DEG_ID: &'static str = "";
+pub static mut ISSUER1_XYZ_CRED_DEG_ID: &'static str = "";
+pub static mut ISSUER2_GVT_CRED_DEF_ID: &'static str = "";
 pub const ANONCREDS_WALLET_CONFIG: &'static str = r#"{"id": "anoncreds_wallet"}"#;
 pub const COMMON_MASTER_SECRET: &'static str = "common_master_secret_name";
 pub const CREDENTIAL1_ID: &'static str = "credential1_id";
@@ -925,10 +929,75 @@ pub fn init_common_wallet() -> (&'static str, &'static str, &'static str, &'stat
             mem::forget(issuer1_gvt_cred);
             CREDENTIAL_JSON = res;
 
+            let res = mem::transmute(&issuer1_gvt_cred_deg_id as &str);
+            mem::forget(issuer1_gvt_cred_deg_id);
+            ISSUER1_GVT_CRED_DEG_ID = res;
+
+            let res = mem::transmute(&issuer1_xyz_cred_deg_id as &str);
+            mem::forget(issuer1_xyz_cred_deg_id);
+            ISSUER1_XYZ_CRED_DEG_ID = res;
+
+            let res = mem::transmute(&issuer2_gvt_cred_def_id as &str);
+            mem::forget(issuer2_gvt_cred_def_id);
+            ISSUER2_GVT_CRED_DEF_ID = res;
+
             wallet::close_wallet(wallet_handle).unwrap();
         });
 
         (CREDENTIAL_DEF_JSON, CREDENTIAL_OFFER_JSON, CREDENTIAL_REQUEST_JSON, CREDENTIAL_JSON)
+    }
+}
+
+pub fn init_additional_wallet(wallet_name: &str) {
+    // assumes that init_common_wallet() has previously been called
+    let anoncreds_wallet_config = format!(r#"{{"id": "{}"}}"#, wallet_name);
+
+    //1. Create and Open wallet
+    wallet::create_wallet(&anoncreds_wallet_config, WALLET_CREDENTIALS).unwrap();
+    let wallet_handle = wallet::open_wallet(&anoncreds_wallet_config, WALLET_CREDENTIALS).unwrap();
+
+    let issuer_wallet_handle = wallet::open_wallet(ANONCREDS_WALLET_CONFIG, WALLET_CREDENTIALS).unwrap();
+
+    unsafe {
+        //5. Issuer1 Creates GVT CredentialOffer
+        let start = Instant::now();
+        let issuer1_gvt_credential_offer = issuer_create_credential_offer(issuer_wallet_handle, &ISSUER1_GVT_CRED_DEG_ID).unwrap();
+        let duration = start.elapsed();
+        println!("     Time elapsed in issuer1_..._credential_offer() is: {:?}", duration);
+
+        //8. Prover creates MasterSecret
+        prover_create_master_secret(wallet_handle, COMMON_MASTER_SECRET).unwrap();
+
+        // Issuer1 issues GVT Credential
+        //9. Prover creates  Credential Request
+        let start = Instant::now();
+        let (issuer1_gvt_credential_req, issuer1_gvt_credential_req_metadata) = prover_create_credential_req(wallet_handle,
+                                                                                                                DID_MY1,
+                                                                                                                &issuer1_gvt_credential_offer,
+                                                                                                                &CREDENTIAL_DEF_JSON,
+                                                                                                                COMMON_MASTER_SECRET).unwrap();
+        //10. Issuer1 creates GVT Credential
+        let (issuer1_gvt_cred, _, _) = issuer_create_credential(issuer_wallet_handle,
+                                                                &issuer1_gvt_credential_offer,
+                                                                &issuer1_gvt_credential_req,
+                                                                &gvt_credential_values_json(),
+                                                                None,
+                                                                None).unwrap();
+
+        //11. Prover stores Credential
+        prover_store_credential(wallet_handle,
+                                CREDENTIAL1_ID,
+                                &issuer1_gvt_credential_req_metadata,
+                                &issuer1_gvt_cred,
+                                &CREDENTIAL_DEF_JSON,
+                                None).unwrap();
+        let duration = start.elapsed();
+        println!("     Time elapsed in issuer1_..._store_credential() is: {:?}", duration);
+
+        println!("     Time elapsed in issuer/prover_..._credentials() is: {:?}", duration);
+
+        wallet::close_wallet(wallet_handle).unwrap();
+        wallet::close_wallet(issuer_wallet_handle).unwrap();
     }
 }
 

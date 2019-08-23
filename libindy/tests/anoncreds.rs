@@ -28,6 +28,8 @@ extern crate indy_sys;
 #[macro_use]
 mod utils;
 
+use std::time::Instant;
+
 use utils::{wallet, anoncreds};
 use utils::anoncreds::{COMMON_MASTER_SECRET, CREDENTIAL1_ID, ANONCREDS_WALLET_CONFIG};
 
@@ -2845,6 +2847,47 @@ mod high_cases {
                                            "{}").unwrap();
 
             wallet::close_wallet(wallet_handle).unwrap();
+        }
+
+        #[test]
+        fn prover_create_proof_works_multi() {
+            anoncreds::init_common_wallet();
+
+            for i in 0..10000 {
+                let wallet_name = format!("anoncreds_wallet_{}", i);
+                let anoncreds_wallet_config = format!(r#"{{"id": "{}"}}"#, &wallet_name);
+                println!("Adding wallet {}", &wallet_name);
+
+                let start = Instant::now();
+                anoncreds::init_additional_wallet(&wallet_name);
+                let duration = start.elapsed();
+                println!("Time elapsed in init_additional_wallet() is: {:?}", duration);
+
+                let wallet_handle = wallet::open_wallet(&anoncreds_wallet_config, WALLET_CREDENTIALS).unwrap();
+
+                let requested_credentials_json = json!({
+                    "self_attested_attributes": json!({}),
+                    "requested_attributes": json!({
+                        "attr1_referent": json!({ "cred_id": CREDENTIAL1_ID, "revealed":true })
+                    }),
+                    "requested_predicates": json!({
+                        "predicate1_referent": json!({ "cred_id": CREDENTIAL1_ID })
+                    })
+                }).to_string();
+
+                let start = Instant::now();
+                anoncreds::prover_create_proof(wallet_handle,
+                                            &anoncreds::proof_request_attr_and_predicate(),
+                                            &requested_credentials_json,
+                                            COMMON_MASTER_SECRET,
+                                            &anoncreds::schemas_for_proof(),
+                                            &anoncreds::cred_defs_for_proof(),
+                                            "{}").unwrap();
+                let duration = start.elapsed();
+                println!("Time elapsed in prover_create_proof() is: {:?}", duration);
+
+                wallet::close_wallet(wallet_handle).unwrap();
+            }
         }
 
         #[test]
