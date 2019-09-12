@@ -624,19 +624,25 @@ impl IssuerCommandExecutor {
                                cred_def_id: &CredentialDefinitionId) -> IndyResult<String> {
         debug!("create_credential_offer >>> wallet_handle: {:?}, cred_def_id: {:?}", wallet_handle, cred_def_id);
 
+        debug!("  get_indy_object() {:?}, {:?}, {:?}", wallet_handle, &cred_def_id.0, &RecordOptions::id_value());
         let cred_def_correctness_proof: CredentialDefinitionCorrectnessProof =
             self.wallet_service.get_indy_object(wallet_handle, &cred_def_id.0, &RecordOptions::id_value())?;
+        debug!("  --> returns {:?}", cred_def_correctness_proof);
 
         let nonce = new_nonce()?;
 
+        debug!("  _wallet_get_schema_id() {:?}, {:?}", wallet_handle, &cred_def_id.0);
         let schema_id = self._wallet_get_schema_id(wallet_handle, &cred_def_id.0)?; // TODO: FIXME get CredDef from wallet and use CredDef.schema_id
+        debug!("  --> returns {:?}", schema_id);
 
+        debug!("  CredentialOffer");
         let credential_offer = CredentialOffer {
             schema_id: schema_id.clone(),
             cred_def_id: cred_def_id.clone(),
             key_correctness_proof: cred_def_correctness_proof.value,
             nonce,
         };
+        debug!("  --> returns {:?}", credential_offer);
 
         let credential_offer_json = serde_json::to_string(&credential_offer)
             .to_indy(IndyErrorKind::InvalidState, "Cannot serialize CredentialOffer")?;
