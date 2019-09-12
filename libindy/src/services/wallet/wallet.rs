@@ -565,6 +565,39 @@ mod tests {
     }
 
     #[test]
+    fn wallet_get_all_works() {
+        test::cleanup_wallet("wallet_get_all_works");
+        {
+            let mut wallet = _wallet("wallet_get_all_works");
+            wallet.add(_type1(), _id1(), _value1(), &_tags()).unwrap();
+            wallet.add(_type1(), _id2(), _value2(), &_tags()).unwrap();
+
+            let mut iterator = wallet.get_all().unwrap();
+
+            let expected_records = _sort(vec![
+                WalletRecord {
+                    id: _id1().to_string(),
+                    value: Some(_value1().to_string()),
+                    tags: Some(_tags()),
+                    type_: Some(_type1().to_string()),
+                },
+                WalletRecord {
+                    id: _id2().to_string(),
+                    value: Some(_value2().to_string()),
+                    tags: Some(_tags()),
+                    type_: Some(_type1().to_string()),
+                },
+            ]);
+
+            assert_eq!(_fetch_all(&mut iterator), expected_records);
+            assert!(iterator.get_total_count().unwrap().is_none());
+
+            wallet.close().unwrap();
+        }
+        test::cleanup_wallet("wallet_search_works_for_empty_query");
+    }
+
+    #[test]
     fn wallet_search_works_for_empty_query() {
         test::cleanup_wallet("wallet_search_works_for_empty_query");
         {
