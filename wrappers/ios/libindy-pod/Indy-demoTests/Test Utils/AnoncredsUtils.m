@@ -38,6 +38,14 @@
     return @"NcYxiDXkpYi6ov5FcYDi1e:2:gvt:1.0";
 }
 
+- (NSString *)credDefId {
+    return @"NcYxiDXkpYi6ov5FcYDi1e:3:CL:1";
+}
+
+- (NSString *)revRegId {
+    return @"NcYxiDXkpYi6ov5FcYDi1e:4:NcYxiDXkpYi6ov5FcYDi1e:3:CL:1:CL_ACCUM:TAG_1";
+}
+
 - (NSString *)getGvtSchemaJson {
     return [self toJson:@{
             @"id": [self getGvtSchemaId],
@@ -848,6 +856,27 @@
     [self waitForExpectations:@[completionExpectation] timeout:[TestUtils longTimeout]];
 
     if (updatedRevStateJson) {*updatedRevStateJson = outUpdatedRevSateJson;}
+    return err;
+}
+
+- (NSError *)toUnqualified:(NSString *)entity
+                       res:(NSString **)res {
+    __block NSError *err = nil;
+    __block NSString *outRes;
+    XCTestExpectation *completionExpectation = nil;
+
+    completionExpectation = [[XCTestExpectation alloc] initWithDescription:@"completion finished"];
+
+    [IndyAnoncreds toUnqualified:entity
+                      completion:^(NSError *error, NSString *result) {
+                          err = error;
+                          outRes = result;
+                          [completionExpectation fulfill];
+                      }];
+
+    [self waitForExpectations:@[completionExpectation] timeout:[TestUtils longTimeout]];
+
+    if (res) {*res = outRes;}
     return err;
 }
 

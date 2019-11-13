@@ -15,6 +15,10 @@
 
 - (NSString *)getGvtSchemaId;
 
+- (NSString *)credDefId;
+
+- (NSString *)revRegId;
+
 - (NSString *)getGvtSchemaJson;
 
 - (NSString *)getIssuer1GvtCredDefId;
@@ -195,5 +199,8 @@
                                     credentialJson:(NSString **)credentialfJson;
 
 - (NSString *)toJson:(NSDictionary *)dictionary;
+
+- (NSError *)toUnqualified:(NSString *)entity
+                       res:(NSString **)res;
 
 @end

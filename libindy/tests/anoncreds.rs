@@ -1,54 +1,32 @@
 #[macro_use]
-extern crate lazy_static;
+mod utils;
 
-#[macro_use]
-extern crate named_type_derive;
+inject_indy_dependencies!();
 
-#[macro_use]
-extern crate derivative;
-
-#[macro_use]
-extern crate serde_derive;
-
-#[macro_use]
-extern crate serde_json;
-
-extern crate byteorder;
 extern crate indyrs as indy;
 extern crate indyrs as api;
-extern crate ursa;
-extern crate uuid;
-extern crate named_type;
-extern crate rmp_serde;
-extern crate rust_base58;
-extern crate time;
-extern crate serde;
 extern crate indy_sys;
-
-#[macro_use]
-mod utils;
 
 use std::time::Instant;
 
-use utils::{wallet, anoncreds};
-use utils::anoncreds::{COMMON_MASTER_SECRET, CREDENTIAL1_ID, ANONCREDS_WALLET_CONFIG};
+use crate::utils::{wallet, anoncreds};
+use crate::utils::anoncreds::{COMMON_MASTER_SECRET, CREDENTIAL1_ID, ANONCREDS_WALLET_CONFIG};
 
 use indy::ErrorCode;
-use utils::constants::*;
-use utils::Setup;
+use crate::utils::constants::*;
+use crate::utils::Setup;
 
-use utils::domain::anoncreds::schema::{Schema};
-use utils::domain::anoncreds::credential_definition::CredentialDefinition;
-use utils::domain::anoncreds::credential::CredentialInfo;
-use utils::domain::anoncreds::credential_for_proof_request::{CredentialsForProofRequest, RequestedCredential};
-use utils::domain::anoncreds::proof::Proof;
-
+use crate::utils::domain::anoncreds::credential::CredentialInfo;
+use crate::utils::domain::anoncreds::credential_for_proof_request::{CredentialsForProofRequest, RequestedCredential};
+use crate::utils::domain::anoncreds::proof::Proof;
+use crate::utils::domain::crypto::did::DidValue;
 
 mod high_cases {
     use super::*;
 
     mod issuer_create_schema {
         use super::*;
+        use crate::utils::domain::anoncreds::schema::SchemaId;
 
         #[test]
         fn issuer_create_schema_works() {
@@ -57,6 +35,15 @@ mod high_cases {
                                                                  SCHEMA_VERSION,
                                                                  GVT_SCHEMA_ATTRIBUTES).unwrap();
             assert_eq!(anoncreds::gvt_schema_id(), schema_id);
+        }
+
+        #[test]
+        fn issuer_create_schema_works_for_fully_qualified_did() {
+            let (schema_id, _) = anoncreds::issuer_create_schema(ISSUER_DID_V1,
+                                                                 GVT_SCHEMA_NAME,
+                                                                 SCHEMA_VERSION,
+                                                                 GVT_SCHEMA_ATTRIBUTES).unwrap();
+            assert_eq!(SchemaId(anoncreds::gvt_schema_id_fully_qualified()).0, schema_id);
         }
     }
 
@@ -466,6 +453,8 @@ mod high_cases {
     // {"issuer_did": DID, "schema_id": gvt_schema_id}
     mod prover_get_credentials_for_proof_req {
         use super::*;
+        use crate::utils::domain::anoncreds::schema::SchemaId;
+        use crate::utils::domain::anoncreds::credential_definition::CredentialDefinitionId;
 
         #[test]
         fn prover_get_credentials_for_proof_req_works_for_empty_req() {
@@ -481,11 +470,8 @@ mod high_cases {
                "requested_predicates": json!({}),
             }).to_string();
 
-            let credentials_json = anoncreds::prover_get_credentials_for_proof_req(wallet_handle, &proof_req).unwrap();
-
-            let credentials: CredentialsForProofRequest = serde_json::from_str(&credentials_json).unwrap();
-            assert_eq!(credentials.attrs.len(), 0);
-            assert_eq!(credentials.predicates.len(), 0);
+            let res = anoncreds::prover_get_credentials_for_proof_req(wallet_handle, &proof_req);
+            assert_code!(ErrorCode::CommonInvalidStructure, res);
 
             wallet::close_wallet(wallet_handle).unwrap();
         }
@@ -956,7 +942,7 @@ mod high_cases {
                    "requested_attributes": json!({
                        "attr1_referent": json!({
                            "name":"name",
-                           "restrictions": [json!({ "schema_id": Schema::schema_id(DID_TRUSTEE, GVT_SCHEMA_NAME, SCHEMA_VERSION) })]
+                           "restrictions": [json!({ "schema_id": SchemaId::new(&DidValue(DID_TRUSTEE.to_string()), GVT_SCHEMA_NAME, SCHEMA_VERSION) })]
                        })
                    }),
                    "requested_predicates": json!({
@@ -987,7 +973,7 @@ mod high_cases {
                    "requested_attributes": json!({
                        "attr1_referent": json!({
                            "name":"name",
-                           "restrictions": [json!({ "cred_def_id": CredentialDefinition::cred_def_id(DID_TRUSTEE, &anoncreds::gvt_schema_id(), "CL", TAG_1) })]
+                           "restrictions": [json!({ "cred_def_id": CredentialDefinitionId::new(&DidValue(DID_TRUSTEE.to_string()), &SchemaId(anoncreds::gvt_schema_id()), "CL", TAG_1) })]
                        })
                    }),
                    "requested_predicates": json!({
@@ -1479,7 +1465,7 @@ mod high_cases {
                    "requested_attributes": json!({
                        "attr1_referent": json!({
                            "name":"name",
-                           "restrictions": json!({ "schema_id": Schema::schema_id(DID_TRUSTEE, GVT_SCHEMA_NAME, SCHEMA_VERSION) })
+                           "restrictions": json!({ "schema_id": SchemaId::new(&DidValue(DID_TRUSTEE.to_string()), GVT_SCHEMA_NAME, SCHEMA_VERSION) })
                        })
                    }),
                    "requested_predicates": json!({
@@ -1510,7 +1496,7 @@ mod high_cases {
                    "requested_attributes": json!({
                        "attr1_referent": json!({
                            "name":"name",
-                           "restrictions": json!({ "cred_def_id": CredentialDefinition::cred_def_id(DID_TRUSTEE, &anoncreds::gvt_schema_id(), "CL", TAG_1) })
+                           "restrictions": json!({ "cred_def_id": CredentialDefinitionId::new(&DidValue(DID_TRUSTEE.to_string()), &SchemaId(anoncreds::gvt_schema_id()), "CL", TAG_1) })
                        })
                    }),
                    "requested_predicates": json!({
@@ -1822,7 +1808,7 @@ mod high_cases {
                    "requested_attributes": json!({}),
                    "requested_predicates": json!({
                        "predicate1_referent": json!({ "name":"age", "p_type":">=", "p_value":18,
-                       "restrictions": [ json!({ "schema_id": Schema::schema_id(DID_TRUSTEE, "other_schema_name", SCHEMA_VERSION) })] })
+                       "restrictions": [ json!({ "schema_id": SchemaId::new(&DidValue(DID_TRUSTEE.to_string()), "other_schema_name", SCHEMA_VERSION) })] })
                    }),
                 }).to_string();
 
@@ -2155,7 +2141,7 @@ mod high_cases {
                             "name":"age",
                             "p_type":">=",
                             "p_value":18,
-                            "restrictions": json!({ "schema_id": Schema::schema_id(DID_TRUSTEE, "other_schema_name", SCHEMA_VERSION) })
+                            "restrictions": json!({ "schema_id": SchemaId::new(&DidValue(DID_TRUSTEE.to_string()), "other_schema_name", SCHEMA_VERSION) })
                          })
                    }),
                 }).to_string();
@@ -2341,7 +2327,6 @@ mod high_cases {
             }).to_string();
 
             let search_handle = anoncreds::prover_search_credentials_for_proof_req(wallet_handle, &proof_req, None).unwrap();
-            println!("search_handle:\n{}", search_handle);
 
             let credentials_json = anoncreds::prover_fetch_next_credentials_for_proof_req(
                 search_handle, "attr1_referent", 100).unwrap();
@@ -2817,6 +2802,72 @@ mod high_cases {
                 wallet::close_wallet(wallet_handle).unwrap();
             }
         }
+
+        mod validation {
+            use super::*;
+
+            #[test]
+            fn prover_search_credentials_for_proof_req_works_for_proof_req_v1_contains_fully_qualified_restrictions() {
+                anoncreds::init_common_wallet();
+
+                let wallet_handle = wallet::open_wallet(ANONCREDS_WALLET_CONFIG, WALLET_CREDENTIALS).unwrap();
+
+                let proof_req = json!({
+                   "nonce":"123432421212",
+                   "name":"proof_req_1",
+                   "version":"0.1",
+                   "requested_attributes": json!({
+                       "attr1_referent": json!({
+                           "name":"name",
+                           "restrictions": {
+                                "issuer_did": ISSUER_DID_V1
+                           }
+                       })
+                   }),
+                   "requested_predicates": json!({ }),
+                }).to_string();
+
+                let res = anoncreds::prover_search_credentials_for_proof_req(wallet_handle, &proof_req, None);
+                assert_code!(ErrorCode::CommonInvalidStructure, res);
+
+                wallet::close_wallet(wallet_handle).unwrap();
+            }
+
+            #[test]
+            fn prover_search_credentials_for_proof_req_works_for_fully_qualified_restrictions() {
+                anoncreds::init_common_wallet();
+
+                let wallet_handle = wallet::open_wallet(ANONCREDS_WALLET_CONFIG, WALLET_CREDENTIALS).unwrap();
+
+                let proof_req = json!({
+                   "nonce":"123432421212",
+                   "name":"proof_req_1",
+                   "version":"0.1",
+                   "requested_attributes": json!({
+                       "attr1_referent": json!({
+                           "name":"name",
+                           "restrictions": {
+                                "issuer_did": ISSUER_DID_V1
+                           }
+                       })
+                   }),
+                   "requested_predicates": json!({ }),
+                   "ver": "2.0"
+                }).to_string();
+
+                let search_handle = anoncreds::prover_search_credentials_for_proof_req(wallet_handle, &proof_req, None).unwrap();
+
+                let credentials_json = anoncreds::prover_fetch_next_credentials_for_proof_req(
+                    search_handle, "attr1_referent", 100).unwrap();
+
+                let credentials: Vec<RequestedCredential> = serde_json::from_str(&credentials_json).unwrap();
+                assert_eq!(credentials.len(), 0);
+
+                anoncreds::prover_close_credentials_search_for_proof_req(search_handle).unwrap();
+
+                wallet::close_wallet(wallet_handle).unwrap();
+            }
+        }
     }
 
     mod prover_create_proof_works {
@@ -2967,6 +3018,81 @@ mod high_cases {
                                                        "{}");
             assert_code!(ErrorCode::CommonInvalidStructure, res);
         }
+
+        #[test]
+        fn verifier_verify_proof_works_for_proof_does_not_correspond_to_request_attribute() {
+            let other_proof_req_json = json!({
+               "nonce":"123432421212",
+               "name":"proof_req_1",
+               "version":"0.1",
+               "requested_attributes": json!({
+                   "attr1_referent": json!({
+                       "name":"sex"
+                   })
+               }),
+               "requested_predicates": json!({}),
+            }).to_string();
+            let res = anoncreds::verifier_verify_proof(&other_proof_req_json,
+                                                       &anoncreds::proof_json(),
+                                                       &anoncreds::schemas_for_proof(),
+                                                       &anoncreds::cred_defs_for_proof(),
+                                                       "{}",
+                                                       "{}");
+            assert_code!(ErrorCode::AnoncredsProofRejected, res);
+        }
+
+        #[test]
+        fn verifier_verify_proof_works_for_wrong_revealed_attr_value() {
+            let proof_json = anoncreds::proof_json().replace(r#"name":"1139481716457488690172217916278103335"#, r#"name":"1111111111111111111111111111111111111"#);
+
+            let res = anoncreds::verifier_verify_proof(&anoncreds::proof_request_attr(),
+                                                       &proof_json,
+                                                       &anoncreds::schemas_for_proof(),
+                                                       &anoncreds::cred_defs_for_proof(),
+                                                       "{}",
+                                                       "{}");
+            assert_code!(ErrorCode::AnoncredsProofRejected, res);
+        }
+
+        #[test]
+        fn verifier_verify_proof_works_for_wrong_encoded() {
+            let proof_json = anoncreds::proof_json().replace(r#"encoded":"1139481716457488690172217916278103335"#, r#"encoded":"1111111111111111111111111111111111111"#);
+
+            let res = anoncreds::verifier_verify_proof(&anoncreds::proof_request_attr(),
+                                                       &proof_json,
+                                                       &anoncreds::schemas_for_proof(),
+                                                       &anoncreds::cred_defs_for_proof(),
+                                                       "{}",
+                                                       "{}");
+            assert_code!(ErrorCode::AnoncredsProofRejected, res);
+        }
+
+        #[test]
+        #[ignore] // TODO: Libindy doesn't aware about algorithm used for encoding of attribute values. We can do this check only on application level.
+        fn verifier_verify_proof_works_for_wrong_raw() {
+            let proof_json = anoncreds::proof_json().replace(r#"raw":"Alex"#, r#"raw":"Bob"#);
+
+            let res = anoncreds::verifier_verify_proof(&anoncreds::proof_request_attr(),
+                                                       &proof_json,
+                                                       &anoncreds::schemas_for_proof(),
+                                                       &anoncreds::cred_defs_for_proof(),
+                                                       "{}",
+                                                       "{}");
+            assert_code!(ErrorCode::AnoncredsProofRejected, res);
+        }
+
+        #[test]
+        fn verifier_verify_proof_works_for_revealed_attr_case_insensitive() {
+            let proof_req_json = anoncreds::proof_request_attr().replace(r#""name":"name""#, r#""name":"NAME""#);
+
+            let valid = anoncreds::verifier_verify_proof(&proof_req_json,
+                                                         &anoncreds::proof_json(),
+                                                         &anoncreds::schemas_for_proof(),
+                                                         &anoncreds::cred_defs_for_proof(),
+                                                         "{}",
+                                                         "{}").unwrap();
+            assert!(valid);
+        }
     }
 
     mod verifier_verify_proof_with_proof_req_restrictions {
@@ -2981,7 +3107,6 @@ mod high_cases {
                                                          "{}",
                                                          "{}").unwrap();
             assert!(valid);
-
         }
 
         #[test]
@@ -3065,7 +3190,6 @@ mod high_cases {
 
         #[test]
         fn verifier_verify_proof_success_for_valid_schema_id() {
-
             let proof_req = json!({
                    "nonce":"123432421212",
                    "name":"proof_req_1",
@@ -3090,7 +3214,6 @@ mod high_cases {
 
         #[test]
         fn verifier_verify_proof_fails_for_missing_schema_id() {
-
             let proof_req = json!({
                    "nonce":"123432421212",
                    "name":"proof_req_1",
@@ -3115,7 +3238,6 @@ mod high_cases {
 
         #[test]
         fn verifier_verify_proof_success_for_valid_schema_issuer_did() {
-
             let proof_req = json!({
                    "nonce":"123432421212",
                    "name":"proof_req_1",
@@ -3140,7 +3262,6 @@ mod high_cases {
 
         #[test]
         fn verifier_verify_proof_fails_for_missing_schema_issuer_did() {
-
             let proof_req = json!({
                    "nonce":"123432421212",
                    "name":"proof_req_1",
@@ -3165,7 +3286,6 @@ mod high_cases {
 
         #[test]
         fn verifier_verify_proof_success_for_valid_schema_name() {
-
             let proof_req = json!({
                    "nonce":"123432421212",
                    "name":"proof_req_1",
@@ -3190,7 +3310,6 @@ mod high_cases {
 
         #[test]
         fn verifier_verify_proof_fails_for_missing_schema_name() {
-
             let proof_req = json!({
                    "nonce":"123432421212",
                    "name":"proof_req_1",
@@ -3215,7 +3334,6 @@ mod high_cases {
 
         #[test]
         fn verifier_verify_proof_success_for_valid_schema_version() {
-
             let proof_req = json!({
                    "nonce":"123432421212",
                    "name":"proof_req_1",
@@ -3240,7 +3358,6 @@ mod high_cases {
 
         #[test]
         fn verifier_verify_proof_fails_for_missing_schema_version() {
-
             let proof_req = json!({
                    "nonce":"123432421212",
                    "name":"proof_req_1",
@@ -3265,7 +3382,6 @@ mod high_cases {
 
         #[test]
         fn verifier_verify_proof_success_for_valid_cred_def_id() {
-
             let proof_req = json!({
                    "nonce":"123432421212",
                    "name":"proof_req_1",
@@ -3290,7 +3406,6 @@ mod high_cases {
 
         #[test]
         fn verifier_verify_proof_fails_for_missing_cred_def_id() {
-
             let proof_req = json!({
                    "nonce":"123432421212",
                    "name":"proof_req_1",
@@ -3315,7 +3430,6 @@ mod high_cases {
 
         #[test]
         fn verifier_verify_proof_fails_for_unknown_restriction() {
-
             let proof_req = json!({
                    "nonce":"123432421212",
                    "name":"proof_req_1",
@@ -3378,14 +3492,70 @@ mod high_cases {
             assert_code!(ErrorCode::WalletItemNotFound, res);
         }
     }
+
+    mod to_unqualified {
+        use super::*;
+        use utils::domain::anoncreds::schema::SchemaV1;
+        use utils::domain::anoncreds::credential_definition::CredentialDefinitionV1;
+        use utils::domain::anoncreds::credential_offer::CredentialOffer;
+        use utils::domain::anoncreds::credential_request::CredentialRequest;
+
+        #[test]
+        fn to_unqualified_ids() {
+            assert_eq!(DID_MY1, anoncreds::to_unqualified(DID_MY1_V1).unwrap());
+            assert_eq!(DID_MY1, anoncreds::to_unqualified(DID_MY1).unwrap());
+
+            assert_eq!(anoncreds::gvt_schema_id(), anoncreds::to_unqualified(&anoncreds::gvt_schema_id_fully_qualified()).unwrap());
+            assert_eq!(anoncreds::gvt_cred_def_id(), anoncreds::to_unqualified(&anoncreds::gvt_cred_def_id_fully_qualified()).unwrap());
+            assert_eq!(anoncreds::local_gvt_cred_def_id(), anoncreds::to_unqualified(&anoncreds::local_gvt_cred_def_id_fully_qualified()).unwrap());
+        }
+
+        #[test]
+        fn to_unqualified_objects() {
+            let setup = Setup::wallet();
+
+            let (schema_id, schema_json) = anoncreds::issuer_create_schema(ISSUER_DID_V1, GVT_SCHEMA_NAME, SCHEMA_VERSION, GVT_SCHEMA_ATTRIBUTES).unwrap();
+
+            assert_eq!(anoncreds::gvt_schema_id(), anoncreds::to_unqualified(&schema_id).unwrap());
+
+            let schema_json_un = anoncreds::to_unqualified(&schema_json).unwrap();
+            let schema: SchemaV1 = ::serde_json::from_str(&schema_json_un).unwrap();
+            assert_eq!(anoncreds::gvt_schema_id(), schema.id.0);
+
+            let (cred_def_id, cred_def_json) = anoncreds::issuer_create_credential_definition(setup.wallet_handle, ISSUER_DID_V1, &schema_json, TAG_1, None, None).unwrap();
+
+            assert_eq!(anoncreds::local_gvt_cred_def_id(), anoncreds::to_unqualified(&cred_def_id).unwrap());
+
+            let cred_def_json_un = anoncreds::to_unqualified(&cred_def_json).unwrap();
+            let cred_def: CredentialDefinitionV1 = ::serde_json::from_str(&cred_def_json_un).unwrap();
+            assert_eq!(anoncreds::local_gvt_cred_def_id(), cred_def.id.0);
+            assert_eq!(anoncreds::gvt_schema_id(), cred_def.schema_id.0);
+
+            let cred_offer_json = anoncreds::issuer_create_credential_offer(setup.wallet_handle, &cred_def_id).unwrap();
+
+            let cred_offer_json_un = anoncreds::to_unqualified(&cred_offer_json).unwrap();
+            let cred_offer: CredentialOffer = ::serde_json::from_str(&cred_offer_json_un).unwrap();
+            assert_eq!(anoncreds::local_gvt_cred_def_id(), cred_offer.cred_def_id.0);
+            assert_eq!(anoncreds::gvt_schema_id(), cred_offer.schema_id.0);
+
+            anoncreds::prover_create_master_secret(setup.wallet_handle, COMMON_MASTER_SECRET).unwrap();
+
+            let (cred_req_json, _) = anoncreds::prover_create_credential_req(setup.wallet_handle, DID_MY1_V1, &cred_offer_json, &cred_def_json_un, COMMON_MASTER_SECRET).unwrap();
+
+            let cred_req_json_un = anoncreds::to_unqualified(&cred_req_json).unwrap();
+            let cred_req: CredentialRequest = ::serde_json::from_str(&cred_req_json_un).unwrap();
+            assert_eq!(DID_MY1.to_string(), cred_req.prover_did.0);
+            assert_eq!(anoncreds::local_gvt_cred_def_id(), cred_req.cred_def_id.0);
+        }
+    }
 }
 
-#[cfg(not(feature="only_high_cases"))]
+#[cfg(not(feature = "only_high_cases"))]
 mod medium_cases {
     use super::*;
     use std::collections::HashSet;
-    use utils::domain::anoncreds::schema::{AttributeNames, MAX_ATTRIBUTES_COUNT};
-    use utils::domain::anoncreds::proof_request::{AttributeInfo, ProofRequest};
+    use crate::utils::domain::anoncreds::schema::{AttributeNames, MAX_ATTRIBUTES_COUNT};
+    use crate::utils::domain::anoncreds::proof_request::{AttributeInfo, ProofRequestPayload};
 
     mod issuer_create_schema {
         use super::*;
@@ -3410,7 +3580,8 @@ mod medium_cases {
 
         #[test]
         fn issuer_create_schema_works_for_attrs_count_more_than_acceptable() {
-            let attr_names: AttributeNames = (0..MAX_ATTRIBUTES_COUNT + 1).map(|i| i.to_string()).collect();
+            let attr_names: AttributeNames = (0..MAX_ATTRIBUTES_COUNT + 1).map(|i| i.to_string())
+                .collect::<HashSet<String>>().into();
 
             let res = anoncreds::issuer_create_schema(ISSUER_DID,
                                                       GVT_SCHEMA_NAME,
@@ -3467,7 +3638,7 @@ mod medium_cases {
             let wallet_handle = wallet::open_wallet(ANONCREDS_WALLET_CONFIG, WALLET_CREDENTIALS).unwrap();
 
             let mut schema = anoncreds::gvt_schema();
-            schema.attr_names = HashSet::new();
+            schema.attr_names = AttributeNames::new();
 
             let res = anoncreds::issuer_create_credential_definition(wallet_handle,
                                                                      ISSUER_DID,
@@ -3585,7 +3756,7 @@ mod medium_cases {
 
             let wallet_handle = wallet::open_wallet(ANONCREDS_WALLET_CONFIG, WALLET_CREDENTIALS).unwrap();
 
-            let res = anoncreds::issuer_create_credential_offer(wallet_handle, "unknown_cred_def_id");
+            let res = anoncreds::issuer_create_credential_offer(wallet_handle, "NcYxiDXkpYi6ov5FcYDi1e:3:CL:100");
             assert_code!(ErrorCode::WalletItemNotFound, res);
 
             wallet::close_wallet(wallet_handle).unwrap();
@@ -4177,19 +4348,19 @@ mod medium_cases {
 
         #[test]
         fn verifier_verify_proof_success_with_in_wql() {
-            let mut proof_req: ProofRequest = serde_json::from_str(&anoncreds::proof_request_restrictions()).unwrap();
+            let mut proof_req: ProofRequestPayload = serde_json::from_str(&anoncreds::proof_request_restrictions()).unwrap();
             proof_req.requested_attributes.insert(
                 "attr1_referent".to_string(),
                 AttributeInfo {
                     name: "name".to_string(),
-                    restrictions: Some(json!({
+                    restrictions: serde_json::from_value(json!({
                         "cred_def_id":{
                                 "$in":[
                                     anoncreds::issuer_1_gvt_cred_def_id(),
                                     "NcYxiDXkpYi6ov5FcYDi1e:3:CL:NcYxiDXkpYi6ov5FcYDi1e:2:xyz:1.0:TAG_1",
                                     "not here 3",
                             ] }
-                    })),
+                    })).unwrap(),
                     non_revoked: None
                 }
             );
@@ -4204,19 +4375,19 @@ mod medium_cases {
 
         #[test]
         fn verifier_verify_proof_fails_with_in_wql() {
-            let mut proof_req: ProofRequest = serde_json::from_str(&anoncreds::proof_request_restrictions()).unwrap();
+            let mut proof_req: ProofRequestPayload = serde_json::from_str(&anoncreds::proof_request_restrictions()).unwrap();
             proof_req.requested_attributes.insert(
                 "attr1_referent".to_string(),
                 AttributeInfo {
                     name: "name".to_string(),
-                    restrictions: Some(json!({
+                    restrictions: serde_json::from_value(json!({
                         "cred_def_id":{
                                 "$in":[
                                     "not here 1",
                                     "NcYxiDXkpYi6ov5FcYDi1e:3:CL:NcYxiDXkpYi6ov5FcYDi1e:2:xyz:1.0:TAG_1",
                                     "not here 3",
                             ] }
-                    })),
+                    })).unwrap(),
                     non_revoked: None
                 }
             );
@@ -4231,12 +4402,12 @@ mod medium_cases {
 
         #[test]
         fn verifier_verify_proof_success_with_vector_of_filters() {
-            let mut proof_req: ProofRequest = serde_json::from_str(&anoncreds::proof_request_restrictions()).unwrap();
+            let mut proof_req: ProofRequestPayload = serde_json::from_str(&anoncreds::proof_request_restrictions()).unwrap();
             proof_req.requested_attributes.insert(
                 "attr1_referent".to_string(),
                 AttributeInfo {
                     name: "name".to_string(),
-                    restrictions: Some(json!([
+                    restrictions: serde_json::from_value(json!([
                         {
                             "cred_def_id":anoncreds::issuer_1_gvt_cred_def_id(),
                             "issuer_did":ISSUER_DID
@@ -4245,7 +4416,7 @@ mod medium_cases {
                             "schema_id":"Not Here 2",
                             "schema_name":"Not Here 2"
                         }
-                    ])),
+                    ])).unwrap(),
                     non_revoked: None
                 }
             );
@@ -4260,12 +4431,12 @@ mod medium_cases {
 
         #[test]
         fn verifier_verify_proof_fails_with_vector_of_filters() {
-            let mut proof_req: ProofRequest = serde_json::from_str(&anoncreds::proof_request_restrictions()).unwrap();
+            let mut proof_req: ProofRequestPayload = serde_json::from_str(&anoncreds::proof_request_restrictions()).unwrap();
             proof_req.requested_attributes.insert(
                 "attr1_referent".to_string(),
                 AttributeInfo {
                     name: "name".to_string(),
-                    restrictions: Some(json!([
+                    restrictions: serde_json::from_value(json!([
                         {
                             "cred_def_id":"Not Here",
                             "issuer_did":"Not Here"
@@ -4274,7 +4445,7 @@ mod medium_cases {
                             "cred_def_id":"Not Here 2",
                             "issuer_did":"Not Here 2"
                         }
-                    ])),
+                    ])).unwrap(),
                     non_revoked: None
                 }
             );
@@ -4289,17 +4460,17 @@ mod medium_cases {
 
         #[test]
         fn verifier_verify_proof_success_with_or_wql() {
-            let mut proof_req: ProofRequest = serde_json::from_str(&anoncreds::proof_request_restrictions()).unwrap();
+            let mut proof_req: ProofRequestPayload = serde_json::from_str(&anoncreds::proof_request_restrictions()).unwrap();
             proof_req.requested_attributes.insert(
                 "attr1_referent".to_string(),
                 AttributeInfo {
                     name: "name".to_string(),
-                    restrictions: Some(json!({
+                    restrictions: serde_json::from_value(json!({
                             "$or":[
                                 { "schema_id":"not here" },
                                 { "cred_def_id":anoncreds::issuer_1_gvt_cred_def_id() }
                             ]
-                        })),
+                        })).unwrap(),
                     non_revoked: None
                 }
             );
@@ -4314,17 +4485,17 @@ mod medium_cases {
 
         #[test]
         fn verifier_verify_proof_fails_with_or_wql() {
-            let mut proof_req: ProofRequest = serde_json::from_str(&anoncreds::proof_request_restrictions()).unwrap();
+            let mut proof_req: ProofRequestPayload = serde_json::from_str(&anoncreds::proof_request_restrictions()).unwrap();
             proof_req.requested_attributes.insert(
                 "attr1_referent".to_string(),
                 AttributeInfo {
                     name: "name".to_string(),
-                    restrictions: Some(json!({
+                    restrictions: serde_json::from_value(json!({
                             "$or":[
                                 { "schema_id":"not here" },
                                 { "cred_def_id":"not here" }
                             ]
-                        })),
+                        })).unwrap(),
                     non_revoked: None
                 }
             );
@@ -4339,17 +4510,17 @@ mod medium_cases {
 
         #[test]
         fn verifier_verify_proof_success_with_and_wql() {
-            let mut proof_req: ProofRequest = serde_json::from_str(&anoncreds::proof_request_restrictions()).unwrap();
+            let mut proof_req: ProofRequestPayload = serde_json::from_str(&anoncreds::proof_request_restrictions()).unwrap();
             proof_req.requested_attributes.insert(
                 "attr1_referent".to_string(),
                 AttributeInfo {
                     name: "name".to_string(),
-                    restrictions: Some(json!({
+                    restrictions: serde_json::from_value(json!({
                             "$and":[
                                 { "cred_def_id": anoncreds::issuer_1_gvt_cred_def_id()},
                                 { "schema_name":GVT_SCHEMA_NAME }
                             ]
-                        })),
+                        })).unwrap(),
                     non_revoked: None
                 }
             );
@@ -4364,17 +4535,17 @@ mod medium_cases {
 
         #[test]
         fn verifier_verify_proof_fails_with_and_wql() {
-            let mut proof_req: ProofRequest = serde_json::from_str(&anoncreds::proof_request_restrictions()).unwrap();
+            let mut proof_req: ProofRequestPayload = serde_json::from_str(&anoncreds::proof_request_restrictions()).unwrap();
             proof_req.requested_attributes.insert(
                 "attr1_referent".to_string(),
                 AttributeInfo {
                     name: "name".to_string(),
-                    restrictions: Some(json!({
+                    restrictions: serde_json::from_value(json!({
                             "$and":[
                                 { "cred_def_id":"CnEDk9HrMnmiHXEV1WFgbVCRteYnPqsJwrTdcZaNhFVW:3:CL:CnEDk9HrMnmiHXEV1WFgbVCRteYnPqsJwrTdcZaNhFVW:2:gvt:1.0:TAG_1" },
                                 { "cred_def_id":"Not Here" }
                             ]
-                        })),
+                        })).unwrap(),
                     non_revoked: None
                 }
             );

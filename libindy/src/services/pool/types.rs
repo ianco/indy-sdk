@@ -2,9 +2,9 @@ use std::cmp::Eq;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
-use errors::prelude::*;
-use utils::crypto::verkey_builder::build_full_verkey;
-use api::CommandHandle;
+use indy_api_types::errors::prelude::*;
+use crate::utils::crypto::verkey_builder::build_full_verkey;
+use indy_api_types::CommandHandle;
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub struct NodeData {
@@ -253,7 +253,7 @@ impl CatchupRep {
             }
         }
 
-        min.ok_or(err_msg(IndyErrorKind::InvalidStructure, "Empty map"))
+        min.ok_or_else(|| err_msg(IndyErrorKind::InvalidStructure, "Empty map"))
     }
 }
 
@@ -501,7 +501,7 @@ impl MinValue for Vec<(CatchupRep, usize)> {
             }
         }
 
-        Ok(res.ok_or(err_msg(IndyErrorKind::InvalidStructure, "Element not Found"))?.1)
+        Ok(res.ok_or_else(|| err_msg(IndyErrorKind::InvalidStructure, "Element not Found"))?.1)
     }
 }
 

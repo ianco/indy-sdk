@@ -5,12 +5,12 @@ use self::futures::Future;
 use serde_json;
 
 use indy::wallet;
-use utils::{test};
-use utils::constants::WALLET_CREDENTIALS;
-use utils::types::WalletRecord;
-use utils::wallet::override_wallet_config_creds;
+use crate::utils::{test};
+use crate::utils::constants::WALLET_CREDENTIALS;
+use crate::utils::types::WalletRecord;
+use crate::utils::wallet::override_wallet_config_creds;
 
-use std::sync::{Once, ONCE_INIT};
+use std::sync::Once;
 use std::collections::HashMap;
 
 pub const SEARCH_COMMON_WALLET_CONFIG: &'static str = r#"{"id":"search_common"}"#;
@@ -166,7 +166,7 @@ pub fn init_non_secret_test_wallet(name: &str, wallet_config: &str, wallet_crede
 
 pub fn populate_common_wallet_for_search() {
     lazy_static! {
-                    static ref COMMON_WALLET_INIT: Once = ONCE_INIT;
+                    static ref COMMON_WALLET_INIT: Once = Once::new();
 
                 }
 

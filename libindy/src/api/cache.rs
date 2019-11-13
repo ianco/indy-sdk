@@ -1,12 +1,14 @@
-use api::{ErrorCode, CommandHandle, WalletHandle, PoolHandle};
-use commands::{Command, CommandExecutor};
-use commands::cache::CacheCommand;
-use errors::prelude::*;
-use utils::ctypes;
-use domain::cache::{GetCacheOptions, PurgeOptions};
-
-use
-libc::c_char;
+use indy_api_types::{ErrorCode, CommandHandle, WalletHandle, PoolHandle};
+use crate::commands::{Command, CommandExecutor};
+use crate::commands::cache::CacheCommand;
+use indy_api_types::errors::prelude::*;
+use indy_utils::ctypes;
+use crate::domain::cache::{GetCacheOptions, PurgeOptions};
+use crate::domain::anoncreds::schema::SchemaId;
+use crate::domain::anoncreds::credential_definition::CredentialDefinitionId;
+use crate::domain::crypto::did::DidValue;
+use indy_api_types::validation::Validatable;
+use libc::c_char;
 
 
 /// Gets credential definition json data for specified credential definition id.
@@ -39,8 +41,8 @@ pub extern fn indy_get_cred_def(command_handle: CommandHandle,
     trace!("indy_get_cred_def: >>> pool_handle: {:?}, wallet_handle: {:?}, submitter_did: {:?}, id: {:?}, options_json: {:?}",
            pool_handle, wallet_handle, submitter_did, id, options_json);
 
-    check_useful_c_str!(submitter_did, ErrorCode::CommonInvalidParam4);
-    check_useful_c_str!(id, ErrorCode::CommonInvalidParam5);
+    check_useful_validatable_string!(submitter_did, ErrorCode::CommonInvalidParam4, DidValue);
+    check_useful_validatable_string!(id, ErrorCode::CommonInvalidParam5, CredentialDefinitionId);
     check_useful_json!(options_json, ErrorCode::CommonInvalidParam6, GetCacheOptions);
     check_useful_c_callback!(cb, ErrorCode::CommonInvalidParam7);
 
@@ -97,8 +99,8 @@ pub extern fn indy_get_schema(command_handle: CommandHandle,
     trace!("indy_get_schema: >>> pool_handle: {:?}, wallet_handle: {:?}, submitter_did: {:?}, id: {:?}, options_json: {:?}",
            pool_handle, wallet_handle, submitter_did, id, options_json);
 
-    check_useful_c_str!(submitter_did, ErrorCode::CommonInvalidParam4);
-    check_useful_c_str!(id, ErrorCode::CommonInvalidParam5);
+    check_useful_validatable_string!(submitter_did, ErrorCode::CommonInvalidParam4, DidValue);
+    check_useful_validatable_string!(id, ErrorCode::CommonInvalidParam5, SchemaId);
     check_useful_json!(options_json, ErrorCode::CommonInvalidParam6, GetCacheOptions);
     check_useful_c_callback!(cb, ErrorCode::CommonInvalidParam7);
 

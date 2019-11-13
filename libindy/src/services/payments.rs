@@ -1,19 +1,20 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::ffi::{CString, NulError};
+use std::ffi::CString;
 use std::ptr::null;
 use std::ops::Not;
 
 use serde_json;
 
 use hex;
-use api::{ErrorCode, WalletHandle, CommandHandle};
-use api::payments::*;
-use errors::prelude::*;
-use utils::ctypes;
+use indy_api_types::{ErrorCode, WalletHandle, CommandHandle};
+use crate::api::payments::*;
+use indy_api_types::errors::prelude::*;
+use indy_utils::ctypes;
 
-use domain::ledger::auth_rule::{Constraint, RoleConstraint, CombinationConstraint};
+use crate::domain::ledger::auth_rule::{Constraint, RoleConstraint, CombinationConstraint};
+use crate::domain::crypto::did::DidValue;
 
 pub struct PaymentsService {
     methods: RefCell<HashMap<String, PaymentsMethod>>
@@ -95,7 +96,7 @@ impl PaymentsService {
     pub fn create_address(&self, cmd_handle: CommandHandle, wallet_handle: WalletHandle, method_type: &str, config: &str) -> IndyResult<()> {
         trace!("create_address >>> wallet_handle: {:?}, method_type: {:?}, config: {:?}", wallet_handle, method_type, config);
         let create_address: CreatePaymentAddressCB = self.methods.borrow().get(method_type)
-            .ok_or(err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", method_type)))?.create_address;
+            .ok_or_else(|| err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", method_type)))?.create_address;
 
         let config = CString::new(config)?;
 
@@ -106,13 +107,13 @@ impl PaymentsService {
         res
     }
 
-    pub fn add_request_fees(&self, cmd_handle: CommandHandle, method_type: &str, wallet_handle: WalletHandle, submitter_did: Option<&str>, req: &str, inputs: &str, outputs: &str, extra: Option<&str>) -> IndyResult<()> {
+    pub fn add_request_fees(&self, cmd_handle: CommandHandle, method_type: &str, wallet_handle: WalletHandle, submitter_did: Option<&DidValue>, req: &str, inputs: &str, outputs: &str, extra: Option<&str>) -> IndyResult<()> {
         trace!("add_request_fees >>> method_type: {:?}, wallet_handle: {:?}, submitter_did: {:?}, req: {:?}, inputs: {:?}, outputs: {:?}, extra: {:?}",
                method_type, wallet_handle, submitter_did, req, inputs, outputs, extra);
         let add_request_fees: AddRequestFeesCB = self.methods.borrow().get(method_type)
-            .ok_or(err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", method_type)))?.add_request_fees;
+            .ok_or_else(|| err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", method_type)))?.add_request_fees;
 
-        let submitter_did = submitter_did.map(ctypes::str_to_cstring);
+        let submitter_did = submitter_did.map(|did| ctypes::str_to_cstring(&did.0));
         let req = CString::new(req)?;
         let inputs = CString::new(inputs)?;
         let outputs = CString::new(outputs)?;
@@ -135,7 +136,7 @@ impl PaymentsService {
     pub fn parse_response_with_fees(&self, cmd_handle: CommandHandle, type_: &str, response: &str) -> IndyResult<()> {
         trace!("parse_response_with_fees >>> type_: {:?}, response: {:?}", type_, response);
         let parse_response_with_fees: ParseResponseWithFeesCB = self.methods.borrow().get(type_)
-            .ok_or(err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", type_)))?.parse_response_with_fees;
+            .ok_or_else(|| err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", type_)))?.parse_response_with_fees;
         let response = CString::new(response)?;
 
         let err = parse_response_with_fees(cmd_handle, response.as_ptr(), cbs::parse_response_with_fees_cb(cmd_handle));
@@ -145,12 +146,12 @@ impl PaymentsService {
         res
     }
 
-    pub fn build_get_payment_sources_request(&self, cmd_handle: CommandHandle, type_: &str, wallet_handle: WalletHandle, submitter_did: Option<&str>, address: &str, next: Option<i64>) -> IndyResult<()> {
+    pub fn build_get_payment_sources_request(&self, cmd_handle: CommandHandle, type_: &str, wallet_handle: WalletHandle, submitter_did: Option<&DidValue>, address: &str, next: Option<i64>) -> IndyResult<()> {
         trace!("build_get_payment_sources_request >>> type_: {:?}, wallet_handle: {:?}, submitter_did: {:?}, address: {:?}", type_, wallet_handle, submitter_did, address);
         let build_get_payment_sources_request: BuildGetPaymentSourcesRequestCB = self.methods.borrow().get(type_)
-            .ok_or(err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", type_)))?.build_get_payment_sources_request;
+            .ok_or_else(|| err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", type_)))?.build_get_payment_sources_request;
 
-        let submitter_did = submitter_did.map(ctypes::str_to_cstring);
+        let submitter_did = submitter_did.map(|did| ctypes::str_to_cstring(&did.0));
         let address = CString::new(address)?;
         let cb = cbs::build_get_payment_sources_request_cb(cmd_handle);
 
@@ -170,7 +171,7 @@ impl PaymentsService {
         trace!("parse_get_payment_sources_response >>> type_: {:?}, response: {:?}", type_, response);
 
         let parse_get_payment_sources_response: ParseGetPaymentSourcesResponseCB = self.methods.borrow().get(type_)
-            .ok_or(err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", type_)))?.parse_get_payment_sources_response;
+            .ok_or_else(|| err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", type_)))?.parse_get_payment_sources_response;
 
         let response = CString::new(response)?;
         let err = parse_get_payment_sources_response(cmd_handle, response.as_ptr(), cbs::parse_get_payment_sources_response_cb(cmd_handle));
@@ -180,12 +181,12 @@ impl PaymentsService {
         res
     }
 
-    pub fn build_payment_req(&self, cmd_handle: CommandHandle, type_: &str, wallet_handle: WalletHandle, submitter_did: Option<&str>, inputs: &str, outputs: &str, extra: Option<&str>) -> IndyResult<()> {
+    pub fn build_payment_req(&self, cmd_handle: CommandHandle, type_: &str, wallet_handle: WalletHandle, submitter_did: Option<&DidValue>, inputs: &str, outputs: &str, extra: Option<&str>) -> IndyResult<()> {
         trace!("build_payment_req >>> type_: {:?}, wallet_handle: {:?}, submitter_did: {:?}, inputs: {:?}, outputs: {:?}, extra: {:?}", type_, wallet_handle, submitter_did, inputs, outputs, extra);
         let build_payment_req: BuildPaymentReqCB = self.methods.borrow().get(type_)
-            .ok_or(err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", type_)))?.build_payment_req;
+            .ok_or_else(|| err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", type_)))?.build_payment_req;
 
-        let submitter_did = submitter_did.map(ctypes::str_to_cstring);
+        let submitter_did = submitter_did.map(|did| ctypes::str_to_cstring(&did.0));
         let inputs = CString::new(inputs)?;
         let outputs = CString::new(outputs)?;
         let extra = extra.map(ctypes::str_to_cstring);
@@ -206,7 +207,7 @@ impl PaymentsService {
     pub fn parse_payment_response(&self, cmd_handle: CommandHandle, type_: &str, response: &str) -> IndyResult<()> {
         trace!("parse_payment_response >>> type_: {:?}, response: {:?}", type_, response);
         let parse_payment_response: ParsePaymentResponseCB = self.methods.borrow().get(type_)
-            .ok_or(err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", type_)))?.parse_payment_response;
+            .ok_or_else(|| err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", type_)))?.parse_payment_response;
 
         let response = CString::new(response)?;
 
@@ -217,12 +218,12 @@ impl PaymentsService {
         res
     }
 
-    pub fn build_mint_req(&self, cmd_handle: CommandHandle, type_: &str, wallet_handle: WalletHandle, submitter_did: Option<&str>, outputs: &str, extra: Option<&str>) -> IndyResult<()> {
+    pub fn build_mint_req(&self, cmd_handle: CommandHandle, type_: &str, wallet_handle: WalletHandle, submitter_did: Option<&DidValue>, outputs: &str, extra: Option<&str>) -> IndyResult<()> {
         trace!("build_mint_req >>> type_: {:?}, wallet_handle: {:?}, submitter_did: {:?}, outputs: {:?}, extra: {:?}", type_, wallet_handle, submitter_did, outputs, extra);
         let build_mint_req: BuildMintReqCB = self.methods.borrow().get(type_)
-            .ok_or(err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", type_)))?.build_mint_req;
+            .ok_or_else(|| err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", type_)))?.build_mint_req;
 
-        let submitter_did = submitter_did.map(ctypes::str_to_cstring);
+        let submitter_did = submitter_did.map(|did| ctypes::str_to_cstring(&did.0));
         let outputs = CString::new(outputs)?;
         let extra = extra.map(ctypes::str_to_cstring);
 
@@ -238,12 +239,12 @@ impl PaymentsService {
         res
     }
 
-    pub fn build_set_txn_fees_req(&self, cmd_handle: CommandHandle, type_: &str, wallet_handle: WalletHandle, submitter_did: Option<&str>, fees: &str) -> IndyResult<()> {
+    pub fn build_set_txn_fees_req(&self, cmd_handle: CommandHandle, type_: &str, wallet_handle: WalletHandle, submitter_did: Option<&DidValue>, fees: &str) -> IndyResult<()> {
         trace!("build_set_txn_fees_req >>> type_: {:?}, wallet_handle: {:?}, submitter_did: {:?}, fees: {:?}", type_, wallet_handle, submitter_did, fees);
         let build_set_txn_fees_req: BuildSetTxnFeesReqCB = self.methods.borrow().get(type_)
-            .ok_or(err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", type_)))?.build_set_txn_fees_req;
+            .ok_or_else(|| err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", type_)))?.build_set_txn_fees_req;
 
-        let submitter_did = submitter_did.map(ctypes::str_to_cstring);
+        let submitter_did = submitter_did.map(|did| ctypes::str_to_cstring(&did.0));
         let fees = CString::new(fees)?;
 
         let err = build_set_txn_fees_req(cmd_handle,
@@ -257,12 +258,12 @@ impl PaymentsService {
         res
     }
 
-    pub fn build_get_txn_fees_req(&self, cmd_handle: CommandHandle, type_: &str, wallet_handle: WalletHandle, submitter_did: Option<&str>) -> IndyResult<()> {
+    pub fn build_get_txn_fees_req(&self, cmd_handle: CommandHandle, type_: &str, wallet_handle: WalletHandle, submitter_did: Option<&DidValue>) -> IndyResult<()> {
         trace!("build_get_txn_fees_req >>> type_: {:?}, wallet_handle: {:?}, submitter_did: {:?}", type_, wallet_handle, submitter_did);
         let build_get_txn_fees_req: BuildGetTxnFeesReqCB = self.methods.borrow().get(type_)
-            .ok_or(err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", type_)))?.build_get_txn_fees_req;
+            .ok_or_else(|| err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", type_)))?.build_get_txn_fees_req;
 
-        let submitter_did = submitter_did.map(ctypes::str_to_cstring);
+        let submitter_did = submitter_did.map(|did| ctypes::str_to_cstring(&did.0));
 
         let err = build_get_txn_fees_req(cmd_handle,
                                          wallet_handle,
@@ -277,7 +278,7 @@ impl PaymentsService {
     pub fn parse_get_txn_fees_response(&self, cmd_handle: CommandHandle, type_: &str, response: &str) -> IndyResult<()> {
         trace!("parse_get_txn_fees_response >>> type_: {:?}, response: {:?}", type_, response);
         let parse_get_txn_fees_response: ParseGetTxnFeesResponseCB = self.methods.borrow().get(type_)
-            .ok_or(err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", type_)))?.parse_get_txn_fees_response;
+            .ok_or_else(|| err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", type_)))?.parse_get_txn_fees_response;
 
         let response = CString::new(response)?;
 
@@ -288,12 +289,12 @@ impl PaymentsService {
         res
     }
 
-    pub fn build_verify_payment_req(&self, cmd_handle: CommandHandle, type_: &str, wallet_handle: WalletHandle, submitter_did: Option<&str>, receipt: &str) -> IndyResult<()> {
+    pub fn build_verify_payment_req(&self, cmd_handle: CommandHandle, type_: &str, wallet_handle: WalletHandle, submitter_did: Option<&DidValue>, receipt: &str) -> IndyResult<()> {
         trace!("build_verify_payment_req >>> type_: {:?}, wallet_handle: {:?}, submitter_did: {:?}, receipt: {:?}", type_, wallet_handle, submitter_did, receipt);
         let build_verify_payment_req: BuildVerifyPaymentReqCB = self.methods.borrow().get(type_)
-            .ok_or(err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", type_)))?.build_verify_payment_req;
+            .ok_or_else(|| err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", type_)))?.build_verify_payment_req;
 
-        let submitter_did = submitter_did.map(ctypes::str_to_cstring);
+        let submitter_did = submitter_did.map(|did| ctypes::str_to_cstring(&did.0));
         let receipt = CString::new(receipt)?;
 
         let err = build_verify_payment_req(cmd_handle,
@@ -310,7 +311,7 @@ impl PaymentsService {
     pub fn parse_verify_payment_response(&self, cmd_handle: CommandHandle, type_: &str, resp_json: &str) -> IndyResult<()> {
         trace!("parse_verify_payment_response >>> type_: {:?}, resp_json: {:?}", type_, resp_json);
         let parse_verify_payment_response: ParseVerifyPaymentResponseCB = self.methods.borrow().get(type_)
-            .ok_or(err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", type_)))?.parse_verify_payment_response;
+            .ok_or_else(|| err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", type_)))?.parse_verify_payment_response;
 
         let resp_json = CString::new(resp_json)?;
 
@@ -430,7 +431,7 @@ impl PaymentsService {
 
         let res = prices.into_iter()
             .min_by_key(|x| x.price)
-            .ok_or(IndyError::from_msg(IndyErrorKind::InvalidStructure, "RequestInfo not found"))?;
+            .ok_or_else(|| IndyError::from_msg(IndyErrorKind::InvalidStructure, "RequestInfo not found"))?;
 
         trace!("get_request_info_with_min_price <<< result: {:?}", res);
         Ok(res)
@@ -476,7 +477,7 @@ impl PaymentsService {
             .collect();
 
         let price = req_info.get(0)
-            .ok_or(IndyError::from_msg(IndyErrorKind::InvalidStructure, "AND Constraint doesn't contain sub constraints."))?
+            .ok_or_else(|| IndyError::from_msg(IndyErrorKind::InvalidStructure, "AND Constraint doesn't contain sub constraints."))?
             .price;
 
         if req_info.iter().any(|x| x.price != price) {
@@ -576,7 +577,7 @@ impl PaymentsService {
     pub fn sign_with_address(&self, cmd_handle: CommandHandle, method: &str, wallet_handle: WalletHandle, address: &str, message: &[u8]) -> IndyResult<()> {
         trace!("sign_with_address >>> wallet_handle: {:?}, address: {:?}, message: {:?}", wallet_handle, address, hex::encode(message));
         let sign_with_address: SignWithAddressCB = self.methods.borrow().get(method)
-                    .ok_or(err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", method)))?.sign_with_address;
+                    .ok_or_else(|| err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", method)))?.sign_with_address;
 
         let address = CString::new(address)?;
 
@@ -590,7 +591,7 @@ impl PaymentsService {
     pub fn verify_with_address(&self, cmd_handle: CommandHandle, method: &str, address: &str, message: &[u8], signature: &[u8]) -> IndyResult<()> {
         trace!("verify_with_address >>> address: {:?}, message: {:?}, signature: {:?}", address, hex::encode(message), hex::encode(signature));
         let verify_with_address: VerifyWithAddressCB = self.methods.borrow().get(method)
-                    .ok_or(err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", method)))?.verify_with_address;
+                    .ok_or_else(|| err_msg(IndyErrorKind::UnknownPaymentMethodType, format!("Unknown payment method {}", method)))?.verify_with_address;
 
         let address = CString::new(address)?;
 
@@ -609,18 +610,12 @@ pub struct Output {
     extra: Option<String>,
 }
 
-impl From<NulError> for IndyError {
-    fn from(err: NulError) -> IndyError {
-        err.to_indy(IndyErrorKind::InvalidState, "Null symbols in payments strings") // TODO: Review kind
-    }
-}
-
 mod cbs {
     use std::ffi::CStr;
     use std::sync::Mutex;
 
-    use commands::{Command, CommandExecutor};
-    use commands::payments::PaymentsCommand;
+    use crate::commands::{Command, CommandExecutor};
+    use crate::commands::payments::PaymentsCommand;
 
     use super::*;
 

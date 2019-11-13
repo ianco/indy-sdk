@@ -17,8 +17,8 @@ use std::sync::Mutex;
 use serde_json;
 use serde::de::DeserializeOwned;
 
-use api::ledger::{CustomFree, CustomTransactionParser};
-use domain::{
+use crate::api::ledger::{CustomFree, CustomTransactionParser};
+use crate::domain::{
     pool::{PoolConfig, PoolOpenConfig},
     ledger::response::{
         Message,
@@ -26,11 +26,13 @@ use domain::{
         ResponseMetadata
     }
 };
-use errors::*;
-use services::pool::pool::{Pool, ZMQPool};
-use utils::environment;
-use services::pool::events::{COMMAND_EXIT, COMMAND_CONNECT, COMMAND_REFRESH};
-use api::{CommandHandle, next_command_handle, PoolHandle, next_pool_handle};
+use indy_api_types::errors::*;
+use crate::services::pool::pool::{Pool, ZMQPool};
+use crate::utils::environment;
+use crate::services::pool::events::{COMMAND_EXIT, COMMAND_CONNECT, COMMAND_REFRESH};
+use indy_api_types::{CommandHandle, PoolHandle};
+use indy_utils::{next_command_handle, next_pool_handle};
+use ursa::bls::VerKey;
 
 mod catchup;
 mod commander;
@@ -45,6 +47,8 @@ mod types;
 lazy_static! {
     static ref REGISTERED_SP_PARSERS: Mutex<HashMap<String, (CustomTransactionParser, CustomFree)>> = Mutex::new(HashMap::new());
 }
+
+type Nodes = HashMap<String, Option<VerKey>>;
 
 pub struct PoolService {
     open_pools: RefCell<HashMap<PoolHandle, ZMQPool>>,
@@ -152,14 +156,7 @@ impl PoolService {
         let pool_handle: PoolHandle = next_pool_handle();
         let mut new_pool = Pool::new(name, pool_handle, config);
 
-        let zmq_ctx = zmq::Context::new();
-        let recv_cmd_sock = zmq_ctx.socket(zmq::SocketType::PAIR)?;
-        let send_cmd_sock = zmq_ctx.socket(zmq::SocketType::PAIR)?;
-        let inproc_sock_name: String = format!("inproc://pool_{}", name);
-
-        recv_cmd_sock.bind(inproc_sock_name.as_str())?;
-
-        send_cmd_sock.connect(inproc_sock_name.as_str())?;
+        let (send_cmd_sock, recv_cmd_sock) = pool_create_pair_of_sockets(&format!("pool_{}", name));
 
         new_pool.work(recv_cmd_sock);
         self._send_msg(pool_handle, COMMAND_CONNECT, &send_cmd_sock, None, None)?;
@@ -172,7 +169,7 @@ impl PoolService {
     pub fn add_open_pool(&self, pool_id: PoolHandle) -> IndyResult<PoolHandle> {
         let pool = self.pending_pools.try_borrow_mut()?
             .remove(&pool_id)
-            .ok_or(err_msg(IndyErrorKind::InvalidPoolHandle, format!("No pool with requested handle {:?}", pool_id)))?;
+            .ok_or_else(|| err_msg(IndyErrorKind::InvalidPoolHandle, format!("No pool with requested handle {:?}", pool_id)))?;
 
         self.open_pools.try_borrow_mut()?.insert(pool_id, pool);
 
@@ -328,13 +325,24 @@ fn _parse_transaction_metadata_v1(message: &serde_json::Value) -> ResponseMetada
     }
 }
 
+pub fn pool_create_pair_of_sockets(addr: &str) -> (zmq::Socket, zmq::Socket) {
+    let zmq_ctx = zmq::Context::new();
+    let send_cmd_sock = zmq_ctx.socket(zmq::SocketType::PAIR).unwrap();
+    let recv_cmd_sock = zmq_ctx.socket(zmq::SocketType::PAIR).unwrap();
+
+    let inproc_sock_name: String = format!("inproc://{}", addr);
+    recv_cmd_sock.bind(inproc_sock_name.as_str()).unwrap();
+    send_cmd_sock.connect(inproc_sock_name.as_str()).unwrap();
+    (send_cmd_sock, recv_cmd_sock)
+}
+
 #[cfg(test)]
 mod tests {
     use std::thread;
 
-    use domain::ledger::request::ProtocolVersion;
-    use services::pool::types::*;
-    use utils::test;
+    use crate::domain::ledger::request::ProtocolVersion;
+    use crate::services::pool::types::*;
+    use crate::utils::test;
 
     use super::*;
 
@@ -349,7 +357,7 @@ mod tests {
 
         use libc::c_char;
 
-        use api::{ErrorCode, INVALID_POOL_HANDLE};
+        use indy_api_types::{ErrorCode, INVALID_POOL_HANDLE};
 
         use super::*;
 
@@ -375,14 +383,10 @@ mod tests {
 
             let ps = PoolService::new();
             let pool_id = next_pool_handle();
-            let ctx = zmq::Context::new();
-            let send_soc = ctx.socket(zmq::SocketType::PAIR).unwrap();
-            let recv_soc = ctx.socket(zmq::SocketType::PAIR).unwrap();
-            recv_soc.bind("inproc://test").unwrap();
-            send_soc.connect("inproc://test").unwrap();
-            ps.open_pools.borrow_mut().insert(pool_id, ZMQPool::new(Pool::new("", pool_id, PoolOpenConfig::default()), send_soc));
+            let (send_cmd_sock, recv_cmd_sock) = pool_create_pair_of_sockets("pool_service_close_works");
+            ps.open_pools.borrow_mut().insert(pool_id, ZMQPool::new(Pool::new("", pool_id, PoolOpenConfig::default()), send_cmd_sock));
             let cmd_id = ps.close(pool_id).unwrap();
-            let recv = recv_soc.recv_multipart(zmq::DONTWAIT).unwrap();
+            let recv = recv_cmd_sock.recv_multipart(zmq::DONTWAIT).unwrap();
             assert_eq!(recv.len(), 3);
             assert_eq!(COMMAND_EXIT, String::from_utf8(recv[0].clone()).unwrap());
             assert_eq!(cmd_id, LittleEndian::read_i32(recv[1].as_slice()));
@@ -394,14 +398,10 @@ mod tests {
 
             let ps = PoolService::new();
             let pool_id = next_pool_handle();
-            let ctx = zmq::Context::new();
-            let send_soc = ctx.socket(zmq::SocketType::PAIR).unwrap();
-            let recv_soc = ctx.socket(zmq::SocketType::PAIR).unwrap();
-            recv_soc.bind("inproc://test").unwrap();
-            send_soc.connect("inproc://test").unwrap();
-            ps.open_pools.borrow_mut().insert(pool_id, ZMQPool::new(Pool::new("", pool_id, PoolOpenConfig::default()), send_soc));
+            let (send_cmd_sock, recv_cmd_sock) = pool_create_pair_of_sockets("pool_service_refresh_works");
+            ps.open_pools.borrow_mut().insert(pool_id, ZMQPool::new(Pool::new("", pool_id, PoolOpenConfig::default()), send_cmd_sock));
             let cmd_id = ps.refresh(pool_id).unwrap();
-            let recv = recv_soc.recv_multipart(zmq::DONTWAIT).unwrap();
+            let recv = recv_cmd_sock.recv_multipart(zmq::DONTWAIT).unwrap();
             assert_eq!(recv.len(), 3);
             assert_eq!(COMMAND_REFRESH, String::from_utf8(recv[0].clone()).unwrap());
             assert_eq!(cmd_id, LittleEndian::read_i32(recv[1].as_slice()));
@@ -426,17 +426,11 @@ mod tests {
         fn pool_service_delete_works_for_opened() {
             test::cleanup_storage("pool_service_delete_works_for_opened");
 
-            let zmq_ctx = zmq::Context::new();
-            let send_cmd_sock = zmq_ctx.socket(zmq::SocketType::PAIR).unwrap();
-            let recv_cmd_sock = zmq_ctx.socket(zmq::SocketType::PAIR).unwrap();
+            let (send_cmd_sock, _recv_cmd_sock) = pool_create_pair_of_sockets("pool_service_delete_works_for_opened");
             let ps = PoolService::new();
             let pool_name = "pool_service_delete_works_for_opened";
             let path: path::PathBuf = environment::pool_path(pool_name);
             let pool_id = next_pool_handle();
-
-            let inproc_sock_name: String = format!("inproc://pool_{}", pool_name);
-            recv_cmd_sock.bind(inproc_sock_name.as_str()).unwrap();
-            send_cmd_sock.connect(inproc_sock_name.as_str()).unwrap();
 
             let pool = Pool::new(pool_name, pool_id, PoolOpenConfig::default());
             ps.open_pools.borrow_mut().insert(pool_id, ZMQPool::new(pool, send_cmd_sock));
@@ -455,12 +449,7 @@ mod tests {
             test::cleanup_storage("pool_send_tx_works");
 
             let name = "test";
-            let zmq_ctx = zmq::Context::new();
-            let recv_cmd_sock = zmq_ctx.socket(zmq::SocketType::PAIR).unwrap();
-            let send_cmd_sock = zmq_ctx.socket(zmq::SocketType::PAIR).unwrap();
-            let inproc_sock_name: String = format!("inproc://pool_{}", name);
-            recv_cmd_sock.bind(inproc_sock_name.as_str()).unwrap();
-            send_cmd_sock.connect(inproc_sock_name.as_str()).unwrap();
+            let (send_cmd_sock, recv_cmd_sock) = pool_create_pair_of_sockets("pool_send_tx_works");
             let pool_id = next_pool_handle();
             let pool = Pool::new(name, pool_id, PoolOpenConfig::default());
             let ps = PoolService::new();
@@ -498,15 +487,9 @@ mod tests {
         fn pool_send_action_works() {
             test::cleanup_storage("pool_send_action_works");
 
-            let name = "test";
-            let zmq_ctx = zmq::Context::new();
-            let recv_cmd_sock = zmq_ctx.socket(zmq::SocketType::PAIR).unwrap();
-            let send_cmd_sock = zmq_ctx.socket(zmq::SocketType::PAIR).unwrap();
-            let inproc_sock_name: String = format!("inproc://pool_{}", name);
-            recv_cmd_sock.bind(inproc_sock_name.as_str()).unwrap();
-            send_cmd_sock.connect(inproc_sock_name.as_str()).unwrap();
+            let (send_cmd_sock, recv_cmd_sock) = pool_create_pair_of_sockets("pool_send_action_works");
             let pool_id = next_pool_handle();
-            let pool = Pool::new(name, pool_id, PoolOpenConfig::default());
+            let pool = Pool::new("pool_send_action_works", pool_id, PoolOpenConfig::default());
             let ps = PoolService::new();
             ps.open_pools.borrow_mut().insert(pool_id, ZMQPool::new(pool, send_cmd_sock));
             let test_data = "str_instead_of_tx_json";
@@ -567,12 +550,10 @@ mod tests {
         #[test]
         pub fn pool_add_open_pool_works() {
             test::cleanup_storage("pool_add_open_pool_works");
-            let name = "test";
             let ps = PoolService::new();
-            let zmq_ctx = zmq::Context::new();
-            let send_cmd_sock = zmq_ctx.socket(zmq::SocketType::PAIR).unwrap();
+            let (send_cmd_sock, _recv_cmd_sock) = pool_create_pair_of_sockets("pool_add_open_pool_works");
             let pool_id = next_pool_handle();
-            let pool = Pool::new(name, pool_id, PoolOpenConfig::default());
+            let pool = Pool::new("pool_add_open_pool_works", pool_id, PoolOpenConfig::default());
             ps.pending_pools.borrow_mut().insert(pool_id, ZMQPool::new(pool, send_cmd_sock));
             assert_match!(Ok(_pool_id), ps.add_open_pool(pool_id));
         }
@@ -588,7 +569,7 @@ mod tests {
 
     #[test]
     fn pool_drop_works_for_after_close() {
-        use utils::test;
+        use crate::utils::test;
         use std::time;
 
         test::cleanup_storage("pool_drop_works_for_after_close");
@@ -600,12 +581,7 @@ mod tests {
             let pool_name = "pool_drop_works_for_after_close";
             let gen_txn = test::gen_txns()[0].clone();
 
-            let zmq_ctx = zmq::Context::new();
-            let send_cmd_sock = zmq_ctx.socket(zmq::SocketType::PAIR).unwrap();
-            let recv_cmd_sock = zmq_ctx.socket(zmq::SocketType::PAIR).unwrap();
-            let inproc_sock_name: String = format!("inproc://pool_{}", pool_name);
-            recv_cmd_sock.bind(inproc_sock_name.as_str()).unwrap();
-            send_cmd_sock.connect(inproc_sock_name.as_str()).unwrap();
+            let (send_cmd_sock, recv_cmd_sock) = pool_create_pair_of_sockets("drop_test");
 
             // create minimal fs config stub before Pool::new()
             let mut pool_path = environment::pool_path(pool_name);
@@ -632,12 +608,12 @@ mod tests {
         extern crate sodiumoxide;
 
         use rust_base58::{ToBase58, FromBase58};
-        use utils::crypto::ed25519_sign;
+        use crate::utils::crypto::ed25519_sign;
 
         use super::*;
 
         use ursa::bls::{Generator, SignKey, VerKey};
-        use services::pool::request_handler::DEFAULT_GENERATOR;
+        use crate::services::pool::request_handler::DEFAULT_GENERATOR;
 
         pub static POLL_TIMEOUT: i64 = 1_000; /* in ms */
 
@@ -719,8 +695,8 @@ mod tests {
 
             gt.txn.data.dest = (&vk[..]).to_base58();
 
-            s.set_curve_publickey(&zmq::z85_encode(&pkc[..]).unwrap()).expect("set public key");
-            s.set_curve_secretkey(&zmq::z85_encode(&skc[..]).unwrap()).expect("set secret key");
+            s.set_curve_publickey(&zmq::z85_encode(&pkc[..]).unwrap().as_bytes()).expect("set public key");
+            s.set_curve_secretkey(&zmq::z85_encode(&skc[..]).unwrap().as_bytes()).expect("set secret key");
             s.set_curve_server(true).expect("set curve server");
 
             s.bind("tcp://127.0.0.1:*").expect("bind");
