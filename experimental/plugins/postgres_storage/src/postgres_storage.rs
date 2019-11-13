@@ -475,7 +475,7 @@ impl WalletStrategy for DatabasePerWalletStrategy {
     }
     // initialize a single wallet based on wallet storage strategy
     fn create_wallet(&self, id: &str, config: &PostgresConfig, credentials: &PostgresCredentials, metadata: &[u8]) -> Result<(), WalletStorageError> {
-        println!("enter DatabasePerWalletStrategy::create_wallet()");
+        //println!("enter DatabasePerWalletStrategy::create_wallet()");
 
         // create database for wallet
         // if admin user and password aren't provided then bail
@@ -530,12 +530,12 @@ impl WalletStrategy for DatabasePerWalletStrategy {
             Err(error) => Err(error)
         };
         conn.finish()?;
-        println!("exit DatabasePerWalletStrategy::create_wallet()");
+        //println!("exit DatabasePerWalletStrategy::create_wallet()");
         ret
     }
     // open a wallet based on wallet storage strategy
     fn open_wallet(&self, id: &str, config: &PostgresConfig, credentials: &PostgresCredentials) -> Result<Box<PostgresStorage>, WalletStorageError> {
-        println!("enter DatabasePerWalletStrategy::open_wallet()");
+        //println!("enter DatabasePerWalletStrategy::open_wallet()");
 
         let url = PostgresStorageType::_postgres_url(id, &config, &credentials);
 
@@ -556,7 +556,7 @@ impl WalletStrategy for DatabasePerWalletStrategy {
             Err(_) => return Err(WalletStorageError::NotFound)
         };
 
-        println!("exit DatabasePerWalletStrategy::open_wallet()");
+        //println!("exit DatabasePerWalletStrategy::open_wallet()");
         Ok(Box::new(PostgresStorage { 
             pool: pool,
             wallet_id: id.to_string()
@@ -610,7 +610,7 @@ impl WalletStrategy for DatabasePerWalletStrategy {
 impl WalletStrategy for MultiWalletSingleTableStrategy {
     // initialize storage based on wallet storage strategy
     fn init_storage(&self, config: &PostgresConfig, credentials: &PostgresCredentials) -> Result<(), WalletStorageError> {
-        println!("enter MultiWalletSingleTableStrategy::init_storage()");
+        //println!("enter MultiWalletSingleTableStrategy::init_storage()");
         // create database and tables for storage
         // if admin user and password aren't provided then bail
         if credentials.admin_account == None || credentials.admin_password == None {
@@ -652,7 +652,7 @@ impl WalletStrategy for MultiWalletSingleTableStrategy {
     }
     // initialize a single wallet based on wallet storage strategy
     fn create_wallet(&self, id: &str, config: &PostgresConfig, credentials: &PostgresCredentials, metadata: &[u8]) -> Result<(), WalletStorageError> {
-        println!("enter MultiWalletSingleTableStrategy::create_wallet()");
+        //println!("enter MultiWalletSingleTableStrategy::create_wallet()");
         // insert metadata
         let url = PostgresStorageType::_postgres_url(_WALLETS_DB, &config, &credentials);
 
@@ -675,12 +675,12 @@ impl WalletStrategy for MultiWalletSingleTableStrategy {
             }
         };
         conn.finish()?;
-        println!("exit MultiWalletSingleTableStrategy::create_wallet()");
+        //println!("exit MultiWalletSingleTableStrategy::create_wallet()");
         ret
     }
     // open a wallet based on wallet storage strategy
     fn open_wallet(&self, id: &str, config: &PostgresConfig, credentials: &PostgresCredentials) -> Result<Box<PostgresStorage>, WalletStorageError> {
-        println!("enter MultiWalletSingleTableStrategy::open_wallet()");
+        //println!("enter MultiWalletSingleTableStrategy::open_wallet()");
 
         let url = PostgresStorageType::_postgres_url(_WALLETS_DB, &config, &credentials);
 
@@ -717,7 +717,7 @@ impl WalletStrategy for MultiWalletSingleTableStrategy {
             Err(_) => return Err(WalletStorageError::NotFound)
         };
 
-        println!("exit MultiWalletSingleTableStrategy::open_wallet()");
+        //println!("exit MultiWalletSingleTableStrategy::open_wallet()");
         Ok(Box::new(PostgresStorage { 
             pool: pool,
             wallet_id: id.to_string()
@@ -1728,7 +1728,7 @@ impl WalletStorageType for PostgresStorageType {
 
         // initialize using the global selected_strategy object
         unsafe {
-            println!("SELECTED_STRATEGY.create_wallet()");
+            //println!("SELECTED_STRATEGY.create_wallet()");
             return SELECTED_STRATEGY.create_wallet(id, &config, &credentials, metadata);
         }
     }
@@ -1782,7 +1782,7 @@ impl WalletStorageType for PostgresStorageType {
 
         // initialize using the global selected_strategy object
         unsafe {
-            println!("SELECTED_STRATEGY.open_wallet()");
+            //println!("SELECTED_STRATEGY.open_wallet()");
             return SELECTED_STRATEGY.open_wallet(id, &config, &credentials);
         }
     }
