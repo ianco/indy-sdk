@@ -215,6 +215,12 @@ indy.generateNonce = function generateNonce (cb) {
   return cb.promise
 }
 
+indy.toUnqualified = function toUnqualified (entity, cb) {
+  cb = wrapIndyCallback(cb)
+  capi.toUnqualified(entity, cb)
+  return cb.promise
+}
+
 indy.openBlobStorageReader = function openBlobStorageReader (type, config, cb) {
   cb = wrapIndyCallback(cb)
   capi.openBlobStorageReader(type, toJson(config), cb)
@@ -371,6 +377,12 @@ indy.abbreviateVerkey = function abbreviateVerkey (did, fullVerkey, cb) {
   return cb.promise
 }
 
+indy.qualifyDid = function qualifyDid (wh, did, method, cb) {
+  cb = wrapIndyCallback(cb)
+  capi.qualifyDid(wh, did, method, cb)
+  return cb.promise
+}
+
 indy.signAndSubmitRequest = function signAndSubmitRequest (poolHandle, wh, submitterDid, request, cb) {
   cb = wrapIndyCallback(cb, fromJson)
   capi.signAndSubmitRequest(poolHandle, wh, submitterDid, toJson(request), cb)
@@ -428,6 +440,14 @@ indy.buildGetAttribRequest = function buildGetAttribRequest (submitterDid, targe
 indy.buildGetNymRequest = function buildGetNymRequest (submitterDid, targetDid, cb) {
   cb = wrapIndyCallback(cb, fromJson)
   capi.buildGetNymRequest(submitterDid, targetDid, cb)
+  return cb.promise
+}
+
+indy.parseGetNymResponse = function parseGetNymResponse (response, cb) {
+  cb = wrapIndyCallback(cb, function (data) {
+    return fromJson(data)
+  })
+  capi.parseGetNymResponse(toJson(response), cb)
   return cb.promise
 }
 

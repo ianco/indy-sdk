@@ -3,7 +3,7 @@ extern crate rmp_serde;
 
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
-use utils::crypto::hash::{Hash};
+use indy_utils::crypto::hash::{Hash};
 use rust_base58::ToBase58;
 
 use base64;
@@ -11,11 +11,11 @@ use rlp::UntrustedRlp;
 use serde_json;
 use serde_json::Value as SJsonValue;
 
-use api::ErrorCode;
-use domain::ledger::{constants, request::ProtocolVersion};
-use errors::prelude::*;
-use services::pool::events::{REQUESTS_FOR_STATE_PROOFS, REQUESTS_FOR_MULTI_STATE_PROOFS};
-use utils::crypto::hash::hash as openssl_hash;
+use indy_api_types::ErrorCode;
+use crate::domain::ledger::{constants, request::ProtocolVersion};
+use indy_api_types::errors::prelude::*;
+use crate::services::pool::events::{REQUESTS_FOR_STATE_PROOFS, REQUESTS_FOR_MULTI_STATE_PROOFS};
+use indy_utils::crypto::hash::hash as openssl_hash;
 
 use super::PoolService;
 use super::types::*;
@@ -24,7 +24,7 @@ use self::log_derive::logfn;
 use ursa::bls::{Bls, Generator, MultiSignature, VerKey};
 use self::node::{Node, TrieDB};
 use rust_base58::FromBase58;
-use services::pool::Nodes;
+use crate::services::pool::Nodes;
 
 mod node;
 
@@ -425,7 +425,7 @@ fn _parse_reply_for_sp(json_msg: &SJsonValue, data: Option<&str>, parsed_data: &
             return Err("No ledger length for this proof".to_string())
         };
 
-        (proof, root_hash, KeyValueSimpleDataVerificationType::MerkleTree(len), parsed_data["multi_signature"].clone())
+        (proof, root_hash, KeyValueSimpleDataVerificationType::MerkleTree(len), json_msg["state_proof"]["multi_signature"].clone())
     };
 
     let value: Option<String> = match _parse_reply_for_proof_value(json_msg, data, parsed_data, xtype, sp_key) {
@@ -624,7 +624,7 @@ fn _calculate_turns(length: u64, idx: u64) -> Vec<bool> {
 fn _verify_proof(proofs_rlp: &[u8], root_hash: &[u8], key: &[u8], expected_value: Option<&str>) -> bool {
     debug!("verify_proof >> key {:?}, expected_value {:?}", key, expected_value);
     let nodes: Vec<Node> = UntrustedRlp::new(proofs_rlp).as_list().unwrap_or_default(); //default will cause error below
-    let mut map: TrieDB = HashMap::new();
+    let mut map: TrieDB = HashMap::with_capacity(nodes.len());
     for node in &nodes {
         map.insert(node.get_hash(), node);
     }
@@ -645,14 +645,14 @@ fn _verify_proof_range(proofs_rlp: &[u8],
                        kvs: &[(String, Option<String>)]) -> bool {
     debug!("verify_proof_range >> from {:?}, prefix {:?}, kvs {:?}", from, prefix, kvs);
     let nodes: Vec<Node> = UntrustedRlp::new(proofs_rlp).as_list().unwrap_or_default(); //default will cause error below
-    let mut map: TrieDB = HashMap::new();
+    let mut map: TrieDB = HashMap::with_capacity(nodes.len());
     for node in &nodes {
         map.insert(node.get_hash(), node);
     }
     map.get(root_hash).map(|root| {
         let res = root.get_all_values(&map, Some(prefix.as_bytes())).map_err(map_err_err!());
         trace!("All values from trie: {:?}", res);
-        let vals = if let Some(vals) = res.ok() {
+        let vals = if let Ok(vals) = res {
             vals
         } else {
             error!("Some errors happened while collecting values from state proof");
@@ -994,7 +994,7 @@ mod tests {
             info!("{:?}", rlp.as_raw());
         }
         info!("parsed");
-        let mut map: TrieDB = HashMap::new();
+        let mut map: TrieDB = HashMap::with_capacity(proofs.len());
         for node in &proofs {
             info!("{:?}", node);
             let out = node.get_hash();
@@ -1473,6 +1473,8 @@ mod tests {
                 "ledgerSize": 2,
                 "rootHash": "123",
                 "txn": {"test1": "test2", "seqNo": 2},
+            },
+            "state_proof": {
                 "multi_signature": "ms"
             }
         });
@@ -1506,7 +1508,7 @@ mod tests {
                 "ledgerSize": 2,
                 "rootHash": "123",
                 "txn": {"test1": "test2", "seqNo": 2},
-//                "multi_signature": "ms"
+//              "multi_signature": "ms"
             }
         });
 
@@ -1538,7 +1540,9 @@ mod tests {
 //                "ledgerSize": 2,
                 "rootHash": "123",
                 "txn": {"test1": "test2", "seqNo": 2},
-                "multi_signature": "ms"
+                "state_proof": {
+                    "multi_signature": "ms"
+                }
             }
         });
 
@@ -1556,6 +1560,8 @@ mod tests {
                 "ledgerSize": 2,
                 "rootHash": "123",
 //                "txn": {"test1": "test2", "seqNo": 2},
+            },
+            "state_proof": {
                 "multi_signature": "ms"
             }
         });

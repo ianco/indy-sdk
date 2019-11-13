@@ -3,6 +3,7 @@ extern crate futures;
 extern crate libc;
 extern crate libloading;
 extern crate os_type;
+extern crate indy_api_types;
 
 use serde_json;
 use serde_json::Value;
@@ -12,10 +13,10 @@ use indy::wallet;
 
 use self::futures::Future;
 
-use utils::{callback, sequence, environment};
-use utils::inmem_wallet::InmemWallet;
-use utils::domain::wallet::Credentials;
-use utils::domain::wallet::Config;
+use crate::utils::{callback, sequence, environment};
+use crate::utils::inmem_wallet::InmemWallet;
+use crate::utils::wallet::indy_api_types::domain::wallet::Credentials;
+use crate::utils::wallet::indy_api_types::domain::wallet::Config;
 
 use std::collections::HashSet;
 use std::collections::hash_map::HashMap;
@@ -24,10 +25,10 @@ use std::sync::Mutex;
 use std::ffi::CString;
 use super::libc::c_char;
 
-use utils::constants::{TYPE, INMEM_TYPE, WALLET_CREDENTIALS};
+use crate::utils::constants::{TYPE, INMEM_TYPE, WALLET_CREDENTIALS};
 
 use std::path::{Path, PathBuf};
-use api::{WalletHandle, CommandHandle};
+use indy_api_types::{WalletHandle, CommandHandle};
 
 pub fn register_wallet_storage(xtype: &str, force_create: bool) -> Result<(), ErrorCode> {
     lazy_static! {

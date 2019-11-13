@@ -1,11 +1,11 @@
 
-use api::{ErrorCode, CommandHandle, WalletHandle};
-use commands::{Command, CommandExecutor};
-use commands::crypto::CryptoCommand;
-use domain::crypto::pack::JWE;
-use domain::crypto::key::KeyInfo;
-use errors::prelude::*;
-use utils::ctypes;
+use indy_api_types::{ErrorCode, CommandHandle, WalletHandle};
+use crate::commands::{Command, CommandExecutor};
+use crate::commands::crypto::CryptoCommand;
+use crate::domain::crypto::pack::JWE;
+use crate::domain::crypto::key::KeyInfo;
+use indy_api_types::errors::prelude::*;
+use indy_utils::ctypes;
 
 use serde_json;
 use libc::c_char;
