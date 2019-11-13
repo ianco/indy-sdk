@@ -111,7 +111,7 @@ mod high_cases {
             let wallet_handle = wallet::open_wallet(ANONCREDS_WALLET_CONFIG, WALLET_CREDENTIALS).unwrap();
 
             let credentials = anoncreds::prover_get_credentials(wallet_handle, r#"{}"#).unwrap();
-            println!("!!!!\n{}", credentials);
+            //println!("!!!!\n{}", credentials);
             let credentials: Vec<CredentialInfo> = serde_json::from_str(&credentials).unwrap();
 
             assert_eq!(credentials.len(), 3);
@@ -495,7 +495,7 @@ mod high_cases {
             }).to_string();
 
             let credentials_json = anoncreds::prover_get_credentials_for_proof_req(wallet_handle, &proof_req).unwrap();
-            println!("credentials_json:\n{}", credentials_json);
+            //println!("credentials_json:\n{}", credentials_json);
 
             let credentials: CredentialsForProofRequest = serde_json::from_str(&credentials_json).unwrap();
             assert_eq!(credentials.attrs.len(), 1);
@@ -1532,7 +1532,7 @@ mod high_cases {
             }).to_string();
 
             let credentials_json = anoncreds::prover_get_credentials_for_proof_req(wallet_handle, &proof_req).unwrap();
-            println!("!!!\n{}", credentials_json);
+            //println!("!!!\n{}", credentials_json);
 
             let credentials: CredentialsForProofRequest = serde_json::from_str(&credentials_json).unwrap();
             assert_eq!(credentials.predicates.len(), 1);
@@ -2356,7 +2356,7 @@ mod high_cases {
             }).to_string();
 
             let search_handle = anoncreds::prover_search_credentials_for_proof_req(wallet_handle, &proof_req, None).unwrap();
-            println!("search_handle:\n{}", search_handle);
+            //println!("search_handle:\n{}", search_handle);
 
             let credentials_json = anoncreds::prover_fetch_next_credentials_for_proof_req(
                 search_handle, "predicate1_referent", 1).unwrap();
@@ -2392,7 +2392,7 @@ mod high_cases {
             }).to_string();
 
             let search_handle = anoncreds::prover_search_credentials_for_proof_req(wallet_handle, &proof_req, None).unwrap();
-            println!("search_handle:\n{}", search_handle);
+            //println!("search_handle:\n{}", search_handle);
 
             let credentials_json = anoncreds::prover_fetch_next_credentials_for_proof_req(
                 search_handle, "predicate1_referent", 1).unwrap();
@@ -2907,12 +2907,12 @@ mod high_cases {
             for i in 0..10000 {
                 let wallet_name = format!("anoncreds_wallet_{}", i);
                 let anoncreds_wallet_config = format!(r#"{{"id": "{}"}}"#, &wallet_name);
-                println!("Adding wallet {}", &wallet_name);
+                //println!("Adding wallet {}", &wallet_name);
 
                 let start = Instant::now();
                 anoncreds::init_additional_wallet(&wallet_name);
-                let duration = start.elapsed();
-                println!("Time elapsed in init_additional_wallet() is: {:?}", duration);
+                //let duration = start.elapsed();
+                //println!("Time elapsed in init_additional_wallet() is: {:?}", duration);
 
                 let wallet_handle = wallet::open_wallet(&anoncreds_wallet_config, WALLET_CREDENTIALS).unwrap();
 
@@ -2934,8 +2934,8 @@ mod high_cases {
                                             &anoncreds::schemas_for_proof(),
                                             &anoncreds::cred_defs_for_proof(),
                                             "{}").unwrap();
-                let duration = start.elapsed();
-                println!("Time elapsed in prover_create_proof() is: {:?}", duration);
+                //let duration = start.elapsed();
+                //println!("Time elapsed in prover_create_proof() is: {:?}", duration);
 
                 wallet::close_wallet(wallet_handle).unwrap();
             }

@@ -984,29 +984,29 @@ pub fn init_additional_wallet(wallet_name: &str) {
     let anoncreds_wallet_config = format!(r#"{{"id": "{}"}}"#, wallet_name);
 
     //1. Create and Open wallet
-    println!("     create wallet");
+    //println!("     create wallet");
     wallet::create_wallet(&anoncreds_wallet_config, WALLET_CREDENTIALS).unwrap();
-    println!("     open wallet");
+    //println!("     open wallet");
     let wallet_handle = wallet::open_wallet(&anoncreds_wallet_config, WALLET_CREDENTIALS).unwrap();
 
-    println!("     open issuer wallet");
+    //println!("     open issuer wallet");
     let issuer_wallet_handle = wallet::open_wallet(ANONCREDS_WALLET_CONFIG, WALLET_CREDENTIALS).unwrap();
 
     unsafe {
         //5. Issuer1 Creates GVT CredentialOffer
-        println!("     create offer");
+        //println!("     create offer");
         let start = Instant::now();
         let issuer1_gvt_credential_offer = issuer_create_credential_offer(issuer_wallet_handle, &ISSUER1_GVT_CRED_DEG_ID).unwrap();
-        let duration = start.elapsed();
-        println!("     Time elapsed in issuer1_..._credential_offer() is: {:?}", duration);
+        //let duration = start.elapsed();
+        //println!("     Time elapsed in issuer1_..._credential_offer() is: {:?}", duration);
 
         //8. Prover creates MasterSecret
-        println!("     create master secret");
+        //println!("     create master secret");
         prover_create_master_secret(wallet_handle, COMMON_MASTER_SECRET).unwrap();
 
         // Issuer1 issues GVT Credential
         //9. Prover creates  Credential Request
-        println!("     create cred request");
+        //println!("     create cred request");
         let start = Instant::now();
         let (issuer1_gvt_credential_req, issuer1_gvt_credential_req_metadata) = prover_create_credential_req(wallet_handle,
                                                                                                                 DID_MY1,
@@ -1014,7 +1014,7 @@ pub fn init_additional_wallet(wallet_name: &str) {
                                                                                                                 &CREDENTIAL_DEF_JSON,
                                                                                                                 COMMON_MASTER_SECRET).unwrap();
         //10. Issuer1 creates GVT Credential
-        println!("     create credential");
+        //println!("     create credential");
         let (issuer1_gvt_cred, _, _) = issuer_create_credential(issuer_wallet_handle,
                                                                 &issuer1_gvt_credential_offer,
                                                                 &issuer1_gvt_credential_req,
@@ -1023,22 +1023,22 @@ pub fn init_additional_wallet(wallet_name: &str) {
                                                                 None).unwrap();
 
         //11. Prover stores Credential
-        println!("     store credential");
+        //println!("     store credential");
         prover_store_credential(wallet_handle,
                                 CREDENTIAL1_ID,
                                 &issuer1_gvt_credential_req_metadata,
                                 &issuer1_gvt_cred,
                                 &CREDENTIAL_DEF_JSON,
                                 None).unwrap();
-        let duration = start.elapsed();
-        println!("     Time elapsed in issuer1_..._store_credential() is: {:?}", duration);
+        //let duration = start.elapsed();
+        //println!("     Time elapsed in issuer1_..._store_credential() is: {:?}", duration);
 
-        println!("     Time elapsed in issuer/prover_..._credentials() is: {:?}", duration);
+        //println!("     Time elapsed in issuer/prover_..._credentials() is: {:?}", duration);
 
-        println!("     close wallets");
+        //println!("     close wallets");
         wallet::close_wallet(wallet_handle).unwrap();
         wallet::close_wallet(issuer_wallet_handle).unwrap();
-        println!("     done");
+        //println!("     done");
     }
 }
 
