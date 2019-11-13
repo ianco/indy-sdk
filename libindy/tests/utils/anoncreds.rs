@@ -10,7 +10,7 @@ use crate::utils::types::CredentialOfferInfo;
 
 use std::sync::Once;
 use std::mem;
-use std::time::Instant;
+//use std::time::Instant;
 
 use crate::utils::constants::*;
 
@@ -995,7 +995,7 @@ pub fn init_additional_wallet(wallet_name: &str) {
     unsafe {
         //5. Issuer1 Creates GVT CredentialOffer
         //println!("     create offer");
-        let start = Instant::now();
+        //let start = Instant::now();
         let issuer1_gvt_credential_offer = issuer_create_credential_offer(issuer_wallet_handle, &ISSUER1_GVT_CRED_DEG_ID).unwrap();
         //let duration = start.elapsed();
         //println!("     Time elapsed in issuer1_..._credential_offer() is: {:?}", duration);
@@ -1007,7 +1007,7 @@ pub fn init_additional_wallet(wallet_name: &str) {
         // Issuer1 issues GVT Credential
         //9. Prover creates  Credential Request
         //println!("     create cred request");
-        let start = Instant::now();
+        //let start = Instant::now();
         let (issuer1_gvt_credential_req, issuer1_gvt_credential_req_metadata) = prover_create_credential_req(wallet_handle,
                                                                                                                 DID_MY1,
                                                                                                                 &issuer1_gvt_credential_offer,

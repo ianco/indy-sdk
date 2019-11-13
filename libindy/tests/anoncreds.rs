@@ -7,7 +7,7 @@ extern crate indyrs as indy;
 extern crate indyrs as api;
 extern crate indy_sys;
 
-use std::time::Instant;
+//use std::time::Instant;
 
 use crate::utils::{wallet, anoncreds};
 use crate::utils::anoncreds::{COMMON_MASTER_SECRET, CREDENTIAL1_ID, ANONCREDS_WALLET_CONFIG};
@@ -2909,7 +2909,7 @@ mod high_cases {
                 let anoncreds_wallet_config = format!(r#"{{"id": "{}"}}"#, &wallet_name);
                 //println!("Adding wallet {}", &wallet_name);
 
-                let start = Instant::now();
+                //let start = Instant::now();
                 anoncreds::init_additional_wallet(&wallet_name);
                 //let duration = start.elapsed();
                 //println!("Time elapsed in init_additional_wallet() is: {:?}", duration);
@@ -2926,7 +2926,7 @@ mod high_cases {
                     })
                 }).to_string();
 
-                let start = Instant::now();
+                //let start = Instant::now();
                 anoncreds::prover_create_proof(wallet_handle,
                                             &anoncreds::proof_request_attr_and_predicate(),
                                             &requested_credentials_json,
