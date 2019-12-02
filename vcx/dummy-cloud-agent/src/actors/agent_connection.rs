@@ -1,5 +1,5 @@
 use actix::prelude::*;
-use actors::{AddA2ARoute, AddA2ConnRoute, HandleA2AMsg, HandleA2ConnMsg, RemoteMsg, HandleAdminMessage, AdminRegisterAgentConnection, requester};
+use actors::{AddA2ARoute, AddA2ConnRoute, HandleA2AMsg, HandleA2ConnMsg, RemoteMsg, HandleAdminMessage, AdminRegisterAgentConnection};
 use actors::router::Router;
 use domain::a2a::*;
 use domain::a2connection::*;
@@ -22,7 +22,6 @@ use rmp_serde;
 use serde_json;
 use actors::admin::Admin;
 use domain::admin_message::{ResAdminQuery, ResQueryAgentConn};
-use futures::future::ok;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct RemoteConnectionDetail {
@@ -84,17 +83,6 @@ pub struct AgentConnection {
     admin: Addr<Admin>
 }
 
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MessageNotification {
-    msg_uid: String,
-    msg_type: RemoteMessageType,
-    their_pw_did: String,
-    msg_status_code: MessageStatusCode,
-    notification_id: String,
-    pw_did: String
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct AgentConnectionState {
     // Agent Key Delegation Proof
@@ -114,6 +102,7 @@ impl AgentConnection {
                   router: Addr<Router>,
                   admin: Addr<Admin>) -> ResponseFuture<(), Error> {
         trace!("AgentConnection::create >> {:?}", config);
+
         future::ok(())
             .and_then(move |_| {
                 let agent_connection = AgentConnection {
@@ -849,20 +838,6 @@ impl AgentConnection {
                                        sending_data,
                                        thread);
         self.state.messages.insert(msg.uid.to_string(), msg.clone());
-        match self.get_webhook_for_message(&msg.sender_did, msg.status_code.clone()) {
-            Some(webhook_url) => {
-                let msg_notification = MessageNotification {
-                    msg_uid: msg.uid.clone(),
-                    msg_type: msg._type.clone(),
-                    their_pw_did: msg.sender_did.clone(),
-                    msg_status_code: msg.status_code.clone(),
-                    pw_did: self.user_pairwise_did.clone(),
-                    notification_id: uuid::Uuid::new_v4().to_string(),
-                };
-                self.send_webhook_notification(webhook_url, msg_notification)
-            }
-            None => ()
-        }
         msg
     }
 
