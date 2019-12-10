@@ -11,6 +11,7 @@ RUN apt-get update && \
       cmake \
       python3-pip \
       debhelper \
+      devscripts \
       libncursesw5-dev \
       libzmq3-dev \
       libsodium-dev
@@ -18,7 +19,7 @@ RUN apt-get update && \
 RUN pip3 install -U \
 	pip \
 	twine \
-	plumbum \
+	plumbum==1.6.7 six==1.12.0 \
 	deb-pkg-tools
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
