@@ -122,6 +122,8 @@ pub(super) fn export_continue(wallet: &Wallet, writer: &mut dyn Write, version: 
             tags: tags.ok_or_else(|| err_msg(IndyErrorKind::InvalidState, "No tags fetched for exported record"))?,
         };
 
+        println!("Record: {:?} {:?} {:?}", record.type_, record.id, record.value);
+
         let record = rmp_serde::to_vec(&record)
             .to_indy(IndyErrorKind::InvalidState, "Can't serialize record")?;
 
