@@ -20,7 +20,6 @@
     "config": {
       "url": "localhost:5432",
       "max_connections" : 90,
-      "min_idle_count" : 5,
       "connection_timeout" : 30,
       "wallet_scheme": "MultiWalletSingleTableSharedPool"
     },
@@ -30,9 +29,7 @@
       "admin_account": "postgres",
       "admin_password": "mysecretpassword"
     },
-    "type": "postgres_storage",
-    "plugin_init_function": null,
-    "plugin_library_path": null
+    "type": "postgres_storage"
   },
   "protocol_type": "1.0"
 }
