@@ -1496,6 +1496,7 @@ impl WalletStorage for PostgresStorage {
                 },
                 None => query::wql_to_sql_count(&type_, query)?
             };
+            println!("wql_to_sql_count() => WQL: {:?}; SQL: {:?}", query, query_string);
 
             let mut rows = conn.query(
                 &query_string,
@@ -1543,6 +1544,7 @@ impl WalletStorage for PostgresStorage {
                 },
                 None => query::wql_to_sql(&type_, query, options)?
             };
+            println!("wql_to_sql() => WQL: {:?}; SQL: {:?}", query, query_string);
 
             let statement = self._prepare_statement(&query_string)?;
             let tag_retriever = if fetch_options.retrieve_tags {
