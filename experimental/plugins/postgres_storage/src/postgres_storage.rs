@@ -2494,6 +2494,9 @@ mod tests {
                 if scheme == "MultiWalletSingleTable" {
                     return _wallet_config_multi();
                 }
+                if scheme == "MultiWalletSingleTableSharedPool" {
+                    return _wallet_config_multi_sharedpool();
+                }
             }
             Err(_) => ()
         };
@@ -2507,6 +2510,14 @@ mod tests {
         let config = json!({
             "url": "localhost:5432".to_owned(),
             "wallet_scheme": "MultiWalletSingleTable".to_owned()
+        }).to_string();
+        config
+    }
+
+    fn _wallet_config_multi_sharedpool() -> String {
+        let config = json!({
+            "url": "localhost:5432".to_owned(),
+            "wallet_scheme": "MultiWalletSingleTableSharedPool".to_owned()
         }).to_string();
         config
     }
