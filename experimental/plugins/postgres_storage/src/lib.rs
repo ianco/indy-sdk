@@ -899,6 +899,9 @@ impl PostgresWallet {
 
         let res = storage.close();
 
+        // TODO test explicitely dropping storage
+        drop(storage);
+
         match res {
             Ok(_) => ErrorCode::Success,
             Err(_err) => ErrorCode::WalletStorageError

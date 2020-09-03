@@ -722,6 +722,8 @@ impl WalletStrategy for DatabasePerWalletStrategy {
         };
 
         // TODO close _conn
+        let _ = _conn.finish();
+    
         let manager = match PostgresConnectionManager::new(&url[..], config.r2d2_tls()) {
             Ok(manager) => manager,
             Err(_) => return Err(WalletStorageError::NotFound)
@@ -921,6 +923,7 @@ impl WalletStrategy for MultiWalletSingleTableStrategy {
         };
 
         // TODO close conn
+        let _ = conn.finish();
 
         let manager = match PostgresConnectionManager::new(&url[..], config.r2d2_tls()) {
             Ok(manager) => manager,
@@ -1755,6 +1758,7 @@ impl WalletStorage for PostgresStorage {
 
     fn close(&mut self) -> Result<(), WalletStorageError> {
         // TODO throws a borrow error if we try to close the connection here; temporary workaround is to rely on idle connection timeout
+
         Ok(())
     }
 }
