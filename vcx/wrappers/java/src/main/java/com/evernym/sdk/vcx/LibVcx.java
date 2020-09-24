@@ -23,6 +23,7 @@ public abstract class LibVcx {
         public int vcx_init_minimal(String config);
 
         public String vcx_error_c_message(int error_code);
+        public String vcx_version();
         public int vcx_shutdown(boolean delete);
         public int vcx_reset();
 
@@ -104,6 +105,16 @@ public abstract class LibVcx {
         public int vcx_connection_connect(int command_handle, int connection_handle, String connection_type, Callback cb);
 
         /**
+         * Asynchronously request a connection to be redirected to old one.
+         */
+        public int vcx_connection_redirect(int command_handle, int connection_handle, int redirect_connection_handle, Callback cb);
+
+        /**
+         * Get the redirect details for the connection.
+         */
+        public int vcx_connection_get_redirect_details(int command_handle, int connection_handle, Callback cb);
+
+        /**
          * Returns the contents of the connection handle or null if the connection does not exist.
          */
         public int vcx_connection_serialize(int command_handle, int connection_handle, Callback cb);
@@ -158,12 +169,93 @@ public abstract class LibVcx {
          */
         public int vcx_connection_send_discovery_features(int command_handle, int connection_handle, String query, String comment, Callback cb);
 
+        /**
+         * Get the information about the connection state.
+         */
+        public int vcx_connection_info(int command_handle, int connection_handle, Callback cb);
 
-    /**
-     * credential issuer object
-     *
-     * Used for offering and managing a credential with an identity owner.
-     */
+        /**
+         * credential issuer object
+         *
+         * Used for offering and managing a credential with an identity owner.
+         */
+        /** Get my pairwise did from connection */
+        public int vcx_connection_get_pw_did(int command_handle, int connection_handle, Callback cb);
+
+        /** Get their pairwise did from connection */
+        public int vcx_connection_get_their_pw_did(int command_handle, int connection_handle, Callback cb);
+
+        /** Send a message to the specified connection
+         ///
+         /// #params
+         ///
+         /// command_handle: command handle to map callback to user context.
+         ///
+         /// connection_handle: connection to receive the message
+         ///
+         /// msg: actual message to send
+         ///
+         /// send_message_options: config options json string that contains following options
+         ///     {
+         ///         msg_type: String, // type of message to send
+         ///         msg_title: String, // message title (user notification)
+         ///         ref_msg_id: Option<String>, // If responding to a message, id of the message
+         ///     }
+         ///
+         /// cb: Callback that provides array of matching messages retrieved
+         ///
+         /// #Returns
+         /// Error code as a u32
+         */
+        public int vcx_connection_send_message(int command_handle, int connection_handle, String msg, String send_message_options, Callback cb);
+
+        /** Generate a signature for the specified data
+         ///
+         /// #params
+         ///
+         /// command_handle: command handle to map callback to user context.
+         ///
+         /// connection_handle: connection to receive the message
+         ///
+         /// data_raw: raw data buffer for signature
+         ///
+         /// data:len: length of data buffer
+         ///
+         /// cb: Callback that provides the generated signature
+         ///
+         /// #Returns
+         /// Error code as a u32
+         */
+        public int vcx_connection_sign_data(int command_handle, int connection_handle, byte[] data_raw, int data_len, Callback cb);
+
+        /** Verify the signature is valid for the specified data
+         ///
+         /// #params
+         ///
+         /// command_handle: command handle to map callback to user context.
+         ///
+         /// connection_handle: connection to receive the message
+         ///
+         /// data_raw: raw data buffer for signature
+         ///
+         /// data_len: length of data buffer
+         ///
+         /// signature_raw: raw data buffer for signature
+         ///
+         /// signature_len: length of data buffer
+         ///
+         /// cb: Callback that specifies whether the signature was valid or not
+         ///
+         /// #Returns
+         /// Error code as a u32
+         */
+        public int vcx_connection_verify_signature(int command_handle, int connection_handle, byte[] data_raw, int data_len, byte[] signature_raw, int signature_len, Callback cb);
+
+        /**
+         * credential issuer object
+         *
+         * Used for offering and managing a credential with an identity owner.
+         */
 
         /** Creates a credential object from the specified credentialdef handle. Populates a handle the new credential. */
         public int vcx_issuer_create_credential(int command_handle, String source_id, int cred_def_handle, String issuer_did, String credential_data, String credential_name, String price, Callback cb);
@@ -172,7 +264,7 @@ public abstract class LibVcx {
         public int vcx_issuer_send_credential_offer(int command_handle, int credential_handle, int connection_handle, Callback cb);
 
         /** Get the credential offer message that can be sent to the specified connection */
-        public int vcx_issuer_get_credential_offer_msg(int command_handle, int credential_handle, int connection_handle, Callback cb);
+        public int vcx_issuer_get_credential_offer_msg(int command_handle, int credential_handle, Callback cb);
 
         /** Updates the state of the credential from the agency. */
         public int vcx_issuer_credential_update_state(int command_handle, int credential_handle, Callback cb);
@@ -187,7 +279,7 @@ public abstract class LibVcx {
         public int vcx_issuer_send_credential(int command_handle, int credential_handle, int connection_handle, Callback cb);
 
         /** Get the credential message that can be sent to the specified connection */
-        public int vcx_issuer_get_credential_msg(int command_handle, int credential_handle, int connection_handle, Callback cb);
+        public int vcx_issuer_get_credential_msg(int command_handle, int credential_handle, String my_pw_did, Callback cb);
 
         /** Populates status with the current state of this credential. */
         public int vcx_issuer_credential_serialize(int command_handle, int credential_handle, Callback cb);
@@ -231,8 +323,14 @@ public abstract class LibVcx {
 
         /**
          * Populate response_data with the latest proof offer received.
+         * Todo: This should be depricated, use vcx_get_proof_msg
          */
         public int vcx_get_proof(int command_handle, int proof_handle, int connection_handle, Callback cb);
+
+        /**
+         * Populate response_data with the latest proof offer received.
+        */
+        public int vcx_get_proof_msg(int command_handle, int proof_handle, Callback cb);
 
         /**
          * Set proof offer as accepted.
@@ -291,9 +389,19 @@ public abstract class LibVcx {
         public int vcx_disclosed_proof_send_proof(int command_handle, int proof_handle, int connection_handle, Callback cb);
 
         /**
+         * Asynchronously send a proof reject to the connection.
+         */
+        public int vcx_disclosed_proof_reject_proof(int command_handle, int proof_handle, int connection_handle, Callback cb);
+
+        /**
          * Get the proof message for sending.
          */
         public int vcx_disclosed_proof_get_proof_msg(int command_handle, int proof_handle, Callback cb);
+
+        /**
+         * Get the proof reject message for sending.
+         */
+        public int vcx_disclosed_proof_get_reject_msg(int command_handle, int proof_handle, Callback cb);
 
         /**
          * Populates status with the current State of this disclosed_proof request.
@@ -386,7 +494,7 @@ public abstract class LibVcx {
         public int vcx_credential_send_request(int command_handle, int credential_handle, int connection_handle,int payment_handle, Callback cb);
 
         /** Get credential request message for given connection */
-        public int vcx_credential_get_request_msg(int command_handle, int credential_handle, int connection_handle, int payment_handle, Callback cb);
+        public int vcx_credential_get_request_msg(int command_handle, int credential_handle, String myPwDid, String theirPwDid, int payment_handle, Callback cb);
 
         /** Check for any credential offers from the connection. */
         public int vcx_credential_get_offers(int command_handle, int connection_handle,Callback cb);
@@ -411,6 +519,9 @@ public abstract class LibVcx {
 
         /** Retrieve information about a stored credential in user's wallet, including credential id and the credential itself. */
         public int vcx_get_credential(int command_handle, int credential_handle, Callback cb);
+
+        /** Delete a credential from the wallet and release it from memory. */
+        public int vcx_delete_credential(int command_handle, int credential_handle, Callback cb);
 
         /**
          * wallet object
@@ -468,6 +579,9 @@ public abstract class LibVcx {
 
         /** Get messages for given uids or pairwise did from agency endpoint */
         public int vcx_messages_download(int command_handle, String messageStatus, String uids, String pwdids, Callback cb);
+
+        /** Get messages for given uids from Cloud Agent */
+        public int vcx_download_agent_messages(int command_handle, String messageStatus, String uids, Callback cb);
 
         /** Update message status for a object of uids */
         public int vcx_messages_update_status(int command_handle, String messageStatus, String msgJson, Callback cb);
@@ -527,6 +641,7 @@ public abstract class LibVcx {
         } catch (UnsatisfiedLinkError ex) {
             // Library could not be found in standard OS locations.
             // Call init(File file) explicitly with absolute library path.
+            ex.printStackTrace();
         }
     }
 
@@ -580,6 +695,29 @@ public abstract class LibVcx {
         return api != null;
     }
 
+    public static void logMessage(String loggerName, int level, String message) {
+        org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(loggerName);
+        switch (level) {
+            case 1:
+                logger.error(message);
+                break;
+            case 2:
+                logger.warn(message);
+                break;
+            case 3:
+                logger.info(message);
+                break;
+            case 4:
+                logger.debug(message);
+                break;
+            case 5:
+                logger.trace(message);
+                break;
+            default:
+                break;
+        }
+    }
+
     private static class Logger {
         private static Callback enabled = null;
 
@@ -587,31 +725,20 @@ public abstract class LibVcx {
 
             @SuppressWarnings({"unused", "unchecked"})
             public void callback(Pointer context, int level, String target, String message, String module_path, String file, int line) {
+
                 detach(false);
 
-                org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(String.format("%s.native.%s", LibVcx.class.getName(), target.replace("::", ".")));
-
-                String logMessage = String.format("%s:%d | %s", file, line, message);
-
-                switch (level) {
-                    case 1:
-                        logger.error(logMessage);
-                        break;
-                    case 2:
-                        logger.warn(logMessage);
-                        break;
-                    case 3:
-                        logger.info(logMessage);
-                        break;
-                    case 4:
-                        logger.debug(logMessage);
-                        break;
-                    case 5:
-                        logger.trace(logMessage);
-                        break;
-                    default:
-                        break;
+                // NOTE: We must restrict the size of the message because the message could be the whole
+                // contents of a file, like a 10 MB log file and we do not want all of that content logged
+                // into the log file itself... This is what the log statement would look like
+                // 2019-02-19 04:34:12.813-0700 ConnectMe[9216:8454774] Debug indy::commands::crypto | src/commands/crypto.rs:286 | anonymous_encrypt <<< res:
+                if (message.length() > 102400) {
+                    // if message is more than 100K then log only 10K of the message
+                    message = message.substring(0, 10240);
                 }
+                String loggerName = String.format("%s.native.%s", LibVcx.class.getName(), target.replace("::", "."));
+                String msg = String.format("%s:%d | %s", file, line, message);
+                logMessage(loggerName, level, msg);
             }
         };
 

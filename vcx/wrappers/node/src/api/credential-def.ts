@@ -7,12 +7,16 @@ import { VCXBase } from './vcx-base'
 import { PaymentManager } from './vcx-payment-txn'
 
 /**
- * @interface
+ * @interface Interface that represents the parameters for `CredentialDef.create` function.
  * @description
- * SourceId: String for SDK User's reference.
- * name: name of credentialdef.
- * schemaNo: Schema Number wanted to create credentialdef off of
- * revocation:
+ * SourceId: Enterprise's personal identification for the user.
+ * name: Name of credential definition
+ * schemaId: The schema id given during the creation of the schema
+ * revocation: type-specific configuration of credential definition revocation
+ *     TODO: Currently supports ISSUANCE BY DEFAULT, support for ISSUANCE ON DEMAND will be added as part of ticket: IS-1074
+ *     support_revocation: true|false - Optional, by default its false
+ *     tails_file: path to tails file - Optional if support_revocation is false
+ *     max_creds: size of tails file - Optional if support_revocation is false
  */
 export interface ICredentialDefCreateData {
   sourceId: string,
@@ -22,6 +26,19 @@ export interface ICredentialDefCreateData {
   paymentHandle: number
 }
 
+/**
+ * @interface Interface that represents the parameters for `CredentialDef.prepareForEndorser` function.
+ * @description
+ * SourceId: Enterprise's personal identification for the user.
+ * name: Name of credential definition
+ * schemaId: The schema id given during the creation of the schema
+ * revocation: type-specific configuration of credential definition revocation
+ *     TODO: Currently supports ISSUANCE BY DEFAULT, support for ISSUANCE ON DEMAND will be added as part of ticket: IS-1074
+ *     support_revocation: true|false - Optional, by default its false
+ *     tails_file: path to tails file - Optional if support_revocation is false
+ *     max_creds: size of tails file - Optional if support_revocation is false
+ * endorser: DID of the Endorser that will submit the transaction.
+ */
 export interface ICredentialDefPrepareForEndorserData {
   sourceId: string,
   name: string,
@@ -45,8 +62,9 @@ export interface ICredentialDefDataObj {
 }
 
 export interface ICredentialDefParams {
-  schemaId: string,
-  name: string,
+  schemaId?: string,
+  name?: string,
+  credDefId?: string,
   tailsFile?: string
 }
 
@@ -58,7 +76,7 @@ export interface IRevocationDetails {
 
 export enum CredentialDefState {
   Built = 0,
-  Published = 1,
+  Published = 1
 }
 
 // tslint:disable max-classes-per-file
@@ -122,7 +140,9 @@ export class CredentialDef extends VCXBase<ICredentialDefData> {
   }
 
   /**
-   * Builds a generic Schema object that will be published by Endorser later
+   * Create a new CredentialDef object that will be published by Endorser later.
+   *
+   * Note that CredentialDef can't be used for credential issuing until it will be published on the ledger.
    *
    * Example:
    * ```
@@ -173,7 +193,8 @@ export class CredentialDef extends VCXBase<ICredentialDefData> {
           (resolve, reject) => ffi.Callback(
             'void',
             ['uint32', 'uint32', 'uint32', 'string', 'string', 'string'],
-            (handle: number, err: number, _handle: number, _credDefTxn: string, _revocRegDefTxn: string, _revocRegEntryTxn: string) => {
+            (handle: number, err: number, _handle: number, _credDefTxn: string, _revocRegDefTxn: string,
+             _revocRegEntryTxn: string) => {
               if (err) {
                 reject(err)
                 return
@@ -182,7 +203,8 @@ export class CredentialDef extends VCXBase<ICredentialDefData> {
                 reject('no credential definition transaction')
                 return
               }
-              resolve({ credDefTxn: _credDefTxn, revocRegDefTxn: _revocRegDefTxn, revocRegEntryTxn: _revocRegEntryTxn, handle: _handle })
+              resolve({ credDefTxn: _credDefTxn, handle: _handle, revocRegDefTxn: _revocRegDefTxn,
+                revocRegEntryTxn: _revocRegEntryTxn })
             })
       )
       credentialDef._setHandle(credDefForEndorser.handle)
@@ -226,19 +248,19 @@ export class CredentialDef extends VCXBase<ICredentialDefData> {
   protected _releaseFn = rustAPI().vcx_credentialdef_release
   protected _serializeFn = rustAPI().vcx_credentialdef_serialize
   protected _deserializeFn = rustAPI().vcx_credentialdef_deserialize
-  private _name: string
-  private _schemaId: string
-  private _credDefId: string | null
+  private _name: string | undefined
+  private _schemaId: string | undefined
+  private _credDefId: string | undefined
   private _tailsFile: string | undefined
   private _credDefTransaction: string | null
   private _revocRegDefTransaction: string | null
   private _revocRegEntryTransaction: string | null
 
-  constructor (sourceId: string, { name, schemaId, tailsFile }: ICredentialDefParams) {
+  constructor (sourceId: string, { name, schemaId, credDefId, tailsFile }: ICredentialDefParams) {
     super(sourceId)
     this._name = name
     this._schemaId = schemaId
-    this._credDefId = null
+    this._credDefId = credDefId
     this._tailsFile = tailsFile
     this._credDefTransaction = null
     this._revocRegDefTransaction = null
@@ -289,7 +311,7 @@ export class CredentialDef extends VCXBase<ICredentialDefData> {
 
   /**
    *
-   * Checks if credential definition is published on the Ledger and updates the the state
+   * Checks if credential definition is published on the Ledger and updates the state
    *
    * Example:
    * ```
@@ -301,8 +323,8 @@ export class CredentialDef extends VCXBase<ICredentialDefData> {
     try {
       await createFFICallbackPromise<number>(
         (resolve, reject, cb) => {
-            const rc = rustAPI().vcx_credentialdef_update_state(0, this.handle, cb)
-            if (rc) {
+          const rc = rustAPI().vcx_credentialdef_update_state(0, this.handle, cb)
+          if (rc) {
               reject(rc)
             }
         },
@@ -334,8 +356,8 @@ export class CredentialDef extends VCXBase<ICredentialDefData> {
     try {
       const stateRes = await createFFICallbackPromise<CredentialDefState>(
         (resolve, reject, cb) => {
-            const rc = rustAPI().vcx_credentialdef_get_state(0, this.handle, cb)
-            if (rc) {
+          const rc = rustAPI().vcx_credentialdef_get_state(0, this.handle, cb)
+          if (rc) {
               reject(rc)
             }
         },

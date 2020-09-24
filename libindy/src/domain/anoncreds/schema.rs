@@ -3,7 +3,6 @@ use super::DELIMITER;
 use super::super::crypto::did::DidValue;
 
 use std::collections::{HashMap, HashSet};
-use named_type::NamedType;
 
 use indy_api_types::validation::Validatable;
 use crate::utils::qualifier;
@@ -21,7 +20,7 @@ pub struct SchemaV1 {
     pub seq_no: Option<u32>,
 }
 
-#[derive(Debug, Serialize, Deserialize, NamedType)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "ver")]
 pub enum Schema {
     #[serde(rename = "1.0")]
@@ -86,6 +85,14 @@ impl Validatable for Schema {
             Schema::SchemaV1(schema) => {
                 schema.attr_names.validate()?;
                 schema.id.validate()?;
+                if let Some((_, name, version)) = schema.id.parts() {
+                    if name != schema.name {
+                        return Err(format!("Inconsistent Schema Id and Schema Name: {:?} and {}", schema.id, schema.name))
+                    }
+                    if version != schema.version {
+                        return Err(format!("Inconsistent Schema Id and Schema Version: {:?} and {}", schema.id, schema.version))
+                    }
+                }
                 Ok(())
             }
         }
@@ -282,6 +289,58 @@ mod tests {
         fn test_validate_schema_id_for_invalid_fully_qualified() {
             let id = SchemaId("schema:sov:NcYxiDXkpYi6ov5FcYDi1e:2:1.0".to_string());
             id.validate().unwrap_err();
+        }
+    }
+
+    mod test_schema_validation {
+        use super::*;
+
+        #[test]
+        fn test_valid_schema() {
+            let schema_json = json!({
+                "id": _schema_id_qualified(),
+                "name": "gvt",
+                "ver": "1.0",
+                "version": "1.0",
+                "attrNames": ["aaa", "bbb", "ccc"],
+            }).to_string();
+
+            let schema: Schema = serde_json::from_str(&schema_json).unwrap();
+            schema.validate().unwrap();
+            match schema {
+                Schema::SchemaV1(schema) => {
+                    assert_eq!(schema.name, "gvt");
+                    assert_eq!(schema.version, "1.0");
+                }
+            }
+        }
+
+        #[test]
+        fn test_invalid_name_schema() {
+            let schema_json = json!({
+                "id": _schema_id_qualified(),
+                "name": "gvt1",
+                "ver": "1.0",
+                "version": "1.0",
+                "attrNames": ["aaa", "bbb", "ccc"],
+            }).to_string();
+
+            let schema: Schema = serde_json::from_str(&schema_json).unwrap();
+            schema.validate().unwrap_err();
+        }
+
+        #[test]
+        fn test_invalid_version_schema() {
+            let schema_json = json!({
+                "id": _schema_id_qualified(),
+                "name": "gvt",
+                "ver": "1.0",
+                "version": "1.1",
+                "attrNames": ["aaa", "bbb", "ccc"],
+            }).to_string();
+
+            let schema: Schema = serde_json::from_str(&schema_json).unwrap();
+            schema.validate().unwrap_err();
         }
     }
 }

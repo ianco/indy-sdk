@@ -23,6 +23,7 @@ impl ProtocolRegistry {
                 family @ MessageFamilies::CredentialIssuance |
                 family @ MessageFamilies::PresentProof |
                 family @ MessageFamilies::TrustPing |
+                family @ MessageFamilies::Basicmessage |
                 family @ MessageFamilies::DiscoveryFeatures => registry.add_protocol(&actors, family),
                 MessageFamilies::Signature => {}
                 MessageFamilies::Unknown(_) => {}
@@ -38,15 +39,15 @@ impl ProtocolRegistry {
                 self.protocols.push(ProtocolDescriptor { pid: family.id(), roles: None })
             }
             Some((actor_1, actor_2)) => {
-                match (actors.contains(&actor_1), actors.contains(&actor_1)) {
+                match (actors.contains(&actor_1), actors.contains(&actor_2)) {
                     (true, true) => {
-                        self.protocols.push({ ProtocolDescriptor { pid: family.id(), roles: None } })
+                        self.protocols.push(ProtocolDescriptor { pid: family.id(), roles: None })
                     }
                     (true, false) => {
-                        self.protocols.push({ ProtocolDescriptor { pid: family.id(), roles: Some(vec![actor_1]) } })
+                        self.protocols.push(ProtocolDescriptor { pid: family.id(), roles: Some(vec![actor_1]) })
                     }
                     (false, true) => {
-                        self.protocols.push({ ProtocolDescriptor { pid: family.id(), roles: Some(vec![actor_1]) } })
+                        self.protocols.push(ProtocolDescriptor { pid: family.id(), roles: Some(vec![actor_2]) })
                     }
                     (false, false) => {}
                 }
@@ -66,11 +67,16 @@ impl ProtocolRegistry {
             None => self.protocols.clone()
         }
     }
+
+    pub fn protocols(&self) -> Vec<ProtocolDescriptor>{
+        self.protocols.clone()
+    }
 }
 
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use utils::devsetup::SetupEmpty;
 
     fn _protocols() -> Vec<ProtocolDescriptor> {
         vec![
@@ -86,12 +92,16 @@ pub mod tests {
 
     #[test]
     fn test_protocol_registry_init_works() {
+        let _setup = SetupEmpty::init();
+
         let registry: ProtocolRegistry = ProtocolRegistry::init();
         assert!(registry.protocols.len() > 0);
     }
 
     #[test]
     fn test_get_protocols_for_query_works_for_none_query() {
+        let _setup = SetupEmpty::init();
+
         let registry: ProtocolRegistry = _protocol_registry();
         let protocols = registry.get_protocols_for_query(None);
         assert_eq!(_protocols(), protocols);
@@ -99,6 +109,8 @@ pub mod tests {
 
     #[test]
     fn test_get_protocols_for_query_works_for_placeholder() {
+        let _setup = SetupEmpty::init();
+
         let registry: ProtocolRegistry = _protocol_registry();
 
         let protocols = registry.get_protocols_for_query(Some("*"));
@@ -107,6 +119,8 @@ pub mod tests {
 
     #[test]
     fn test_get_protocols_for_query_works_for_partial() {
+        let _setup = SetupEmpty::init();
+
         let registry: ProtocolRegistry = _protocol_registry();
 
         let protocols = registry.get_protocols_for_query(Some("protocol_1.0*"));
@@ -120,6 +134,8 @@ pub mod tests {
 
     #[test]
     fn test_get_protocols_for_query_works_for_exact_protocol() {
+        let _setup = SetupEmpty::init();
+
         let registry: ProtocolRegistry = _protocol_registry();
 
         let protocols = registry.get_protocols_for_query(Some("protocol_1.0_test"));
@@ -132,6 +148,8 @@ pub mod tests {
 
     #[test]
     fn test_get_protocols_for_query_works_for_no_matching() {
+        let _setup = SetupEmpty::init();
+
         let registry: ProtocolRegistry = _protocol_registry();
 
         let protocols = registry.get_protocols_for_query(Some("test_some_other"));
@@ -141,6 +159,8 @@ pub mod tests {
 
     #[test]
     fn test_get_protocols_for_query_works_for_real() {
+        let _setup = SetupEmpty::init();
+
         let registry: ProtocolRegistry = ProtocolRegistry::init();
 
         let protocols = registry.get_protocols_for_query(None);
@@ -150,16 +170,20 @@ pub mod tests {
         let expected_protocols = vec![
             ProtocolDescriptor { pid: MessageFamilies::Connections.id(), roles: None },
         ];
+        assert_eq!(expected_protocols, protocols);
 
         let protocols = registry.get_protocols_for_query(Some("did:sov:BzCbsNYhMrjHiqZDTUASHg;spec/connections/1.0"));
         let expected_protocols = vec![
             ProtocolDescriptor { pid: MessageFamilies::Connections.id(), roles: None },
         ];
+        assert_eq!(expected_protocols, protocols);
     }
 
     #[test]
     fn test_get_protocols_for_query_works_for_limited_actors() {
-        ::settings::set_config_value(::settings::ACTORS, &json!([Actors::Invitee]).to_string());
+        let _setup = SetupEmpty::init();
+
+        ::settings::set_config_value(::settings::CONFIG_ACTORS, &json!([Actors::Invitee]).to_string());
 
         let registry: ProtocolRegistry = ProtocolRegistry::init();
 
@@ -168,5 +192,6 @@ pub mod tests {
         let expected_protocols = vec![
             ProtocolDescriptor { pid: MessageFamilies::Connections.id(), roles: Some(vec![Actors::Invitee]) },
         ];
+        assert_eq!(expected_protocols, protocols);
     }
 }

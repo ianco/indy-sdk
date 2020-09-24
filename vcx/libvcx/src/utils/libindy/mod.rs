@@ -12,64 +12,48 @@ pub mod logger;
 
 pub mod error_codes;
 
-use settings;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
-use error::prelude::*;
+use settings;
 
-lazy_static! {
-    static ref NEXT_LIBINDY_RC: Mutex<Vec<i32>> = Mutex::new(vec![]);
-}
-
-pub fn mock_libindy_rc() -> u32 { NEXT_LIBINDY_RC.lock().unwrap().pop().unwrap_or(0) as u32 }
-
-pub fn set_libindy_rc(rc: u32) { NEXT_LIBINDY_RC.lock().unwrap().push(rc as i32); }
+use std::sync::atomic::{AtomicUsize, Ordering};
+use indy_sys::CommandHandle;
 
 static COMMAND_HANDLE_COUNTER: AtomicUsize = AtomicUsize::new(1);
 
-pub fn next_i32_command_handle() -> i32 {
-    (COMMAND_HANDLE_COUNTER.fetch_add(1, Ordering::SeqCst) + 1) as i32
+pub fn next_command_handle() -> CommandHandle {
+    (COMMAND_HANDLE_COUNTER.fetch_add(1, Ordering::SeqCst) + 1) as CommandHandle
 }
 
-pub fn next_u32_command_handle() -> u32 {
-    (COMMAND_HANDLE_COUNTER.fetch_add(1, Ordering::SeqCst) + 1) as u32
+lazy_static! {
+    static ref LIBINDY_MOCK: Mutex<LibindyMock> = Mutex::new(LibindyMock::default());
 }
 
-pub fn init_pool() -> VcxResult<()> {
-    trace!("init_pool >>>");
+#[derive(Default)]
+pub struct LibindyMock {
+    results: Vec<u32>
+}
 
-    if settings::test_indy_mode_enabled() { return Ok(()); }
-
-    let pool_name = settings::get_config_value(settings::CONFIG_POOL_NAME)
-        .unwrap_or(settings::DEFAULT_POOL_NAME.to_string());
-
-    let path: String = settings::get_config_value(settings::CONFIG_GENESIS_PATH)?;
-
-    trace!("opening pool {} with genesis_path: {}", pool_name, path);
-    match pool::create_pool_ledger_config(&pool_name, &path) {
-        Err(e) => {
-            warn!("Pool Config Creation Error: {}", e);
-            Err(e)
+impl LibindyMock {
+    pub fn set_next_result(rc: u32) {
+        if settings::indy_mocks_enabled() {
+            LIBINDY_MOCK.lock().unwrap().results.push(rc);
         }
-        Ok(_) => {
-            debug!("Pool Config Created Successfully");
-            let pool_config: Option<String> = settings::get_config_value(settings::CONFIG_POOL_CONFIG).ok();
-            pool::open_pool_ledger(&pool_name, pool_config.as_ref().map(String::as_str))?;
-            Ok(())
-        }
+    }
+
+    pub fn get_result() -> u32 {
+        LIBINDY_MOCK.lock().unwrap().results.pop().unwrap_or_default()
     }
 }
 
+#[allow(unused_imports)]
 #[cfg(test)]
 pub mod tests {
     use super::*;
     use futures::Future;
+    use utils::devsetup::*;
+    use settings;
 
-    pub fn create_key(wallet_handle: i32, seed: Option<&str>) -> String {
-        let key_config = json!({"seed": seed}).to_string();
-        indy::crypto::create_key(::utils::libindy::wallet::get_wallet_handle(), Some(&key_config)).wait().unwrap()
-    }
-
+    // TODO:  Is used for Aries tests...try to remove and use one of devsetup's
     pub mod test_setup {
         use super::*;
         use indy;
@@ -81,7 +65,7 @@ pub mod tests {
         pub struct Setup {
             pub name: String,
             pub wallet_config: String,
-            pub wallet_handle: i32,
+            pub wallet_handle: indy::WalletHandle,
             pub key: String,
         }
 
@@ -102,7 +86,7 @@ pub mod tests {
 
         impl Drop for Setup {
             fn drop(&mut self) {
-                if self.wallet_handle != 0 {
+                if self.wallet_handle.0 != 0 {
                     indy::wallet::close_wallet(self.wallet_handle).wait().unwrap();
                     indy::wallet::delete_wallet(&self.wallet_config, WALLET_CREDENTIALS).wait().unwrap();
                 }
@@ -113,13 +97,9 @@ pub mod tests {
     #[cfg(feature = "pool_tests")]
     #[test]
     fn test_init_pool_and_wallet() {
-        use super::*;
+        let _setup = SetupWalletAndPool::init();
 
-        init!("ledger");
-        // make sure there's a valid wallet and pool before trying to use them.
-        wallet::close_wallet().unwrap();
-        pool::close().unwrap();
-        init_pool().unwrap();
+        pool::init_pool().unwrap();
         wallet::init_wallet(settings::DEFAULT_WALLET_NAME, None, None, None).unwrap();
     }
 }

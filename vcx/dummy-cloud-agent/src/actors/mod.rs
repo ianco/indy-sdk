@@ -1,6 +1,9 @@
 use actix::prelude::*;
 use failure::*;
 
+use crate::domain::a2connection::A2ConnMessage;
+use crate::domain::admin_message::{AdminQuery, ResAdminQuery};
+
 pub mod router;
 pub mod forward_agent;
 pub mod admin;
@@ -9,39 +12,6 @@ pub mod agent;
 pub mod agent_connection;
 pub mod requester;
 
-use domain::a2connection::A2ConnMessage;
-use domain::admin_message::{AdminQuery, ResAdminQuery};
-
-pub struct AdminRegisterRouter(pub Recipient<HandleAdminMessage>);
-
-impl Message for AdminRegisterRouter {
-    type Result = Result<(), Error>;
-}
-
-pub struct AdminRegisterForwardAgent(pub Recipient<HandleAdminMessage>);
-
-impl Message for AdminRegisterForwardAgent {
-    type Result = Result<(), Error>;
-}
-
-pub struct AdminRegisterForwardAgentConnection(pub String, pub Recipient<HandleAdminMessage>);
-
-impl Message for AdminRegisterForwardAgentConnection {
-    type Result = Result<(), Error>;
-}
-
-pub struct AdminRegisterAgent(pub String, pub Recipient<HandleAdminMessage>);
-
-impl Message for AdminRegisterAgent {
-    type Result = Result<(), Error>;
-}
-
-pub struct AdminRegisterAgentConnection(pub String, pub Recipient<HandleAdminMessage>);
-
-impl Message for AdminRegisterAgentConnection {
-    type Result = Result<(), Error>;
-}
-
 #[derive(Debug, Clone)]
 pub struct HandleAdminMessage(pub AdminQuery);
 
@@ -49,19 +19,6 @@ impl Message for HandleAdminMessage {
     type Result = Result<ResAdminQuery, Error>;
 }
 
-
-// Common messages
-pub struct AddA2ARoute(pub String, pub String, pub Recipient<HandleA2AMsg>);
-
-impl Message for AddA2ARoute {
-    type Result = ();
-}
-
-pub struct AddA2ConnRoute(pub String, pub String, pub Recipient<HandleA2ConnMsg>);
-
-impl Message for AddA2ConnRoute {
-    type Result = ();
-}
 #[derive(Debug)]
 pub struct GetEndpoint();
 
@@ -88,13 +45,6 @@ impl Message for ForwardA2AMsg {
 pub struct HandleA2AMsg(pub Vec<u8>);
 
 impl Message for HandleA2AMsg {
-    type Result = Result<Vec<u8>, Error>;
-}
-
-#[derive(Debug)]
-pub struct RouteA2AMsg(pub String, pub Vec<u8>);
-
-impl Message for RouteA2AMsg {
     type Result = Result<Vec<u8>, Error>;
 }
 

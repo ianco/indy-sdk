@@ -30,7 +30,9 @@ use v3::messages::proof_presentation::presentation::Presentation;
 use v3::messages::discovery::query::Query;
 use v3::messages::discovery::disclose::Disclose;
 
-#[derive(Debug, PartialEq)]
+use v3::messages::basic_message::message::BasicMessage;
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum A2AMessage {
     /// routing
     Forward(Forward),
@@ -66,8 +68,11 @@ pub enum A2AMessage {
     Query(Query),
     Disclose(Disclose),
 
+    /// basic message
+    BasicMessage(BasicMessage),
+
     /// Any Raw Message
-    Generic(String),
+    Generic(Value),
 }
 
 impl<'de> Deserialize<'de> for A2AMessage {
@@ -76,7 +81,7 @@ impl<'de> Deserialize<'de> for A2AMessage {
 
         let message_type: MessageType = match serde_json::from_value(value["@type"].clone()) {
             Ok(message_type) => message_type,
-            Err(_) => return Ok(A2AMessage::Generic(value.to_string()))
+            Err(_) => return Ok(A2AMessage::Generic(value))
         };
 
         match (message_type.family, message_type.type_.as_str()) {
@@ -180,9 +185,14 @@ impl<'de> Deserialize<'de> for A2AMessage {
                     .map(|msg| A2AMessage::Disclose(msg))
                     .map_err(de::Error::custom)
             }
+            (MessageFamilies::Basicmessage, A2AMessage::BASIC_MESSAGE) => {
+                BasicMessage::deserialize(value)
+                    .map(|msg| A2AMessage::BasicMessage(msg))
+                    .map_err(de::Error::custom)
+            }
             (_, other_type) => {
                 warn!("Unexpected @type field structure: {}", other_type);
-                Ok(A2AMessage::Generic(value.to_string()))
+                Ok(A2AMessage::Generic(value))
             }
         }
     }
@@ -218,7 +228,8 @@ impl Serialize for A2AMessage {
             A2AMessage::PresentationAck(msg) => set_a2a_message_type(msg, MessageFamilies::PresentProof, A2AMessage::ACK),
             A2AMessage::Query(msg) => set_a2a_message_type(msg, MessageFamilies::DiscoveryFeatures, A2AMessage::QUERY),
             A2AMessage::Disclose(msg) => set_a2a_message_type(msg, MessageFamilies::DiscoveryFeatures, A2AMessage::DISCLOSE),
-            A2AMessage::Generic(msg) => ::serde_json::to_value(msg),
+            A2AMessage::BasicMessage(msg) => set_a2a_message_type(msg, MessageFamilies::Basicmessage, A2AMessage::BASIC_MESSAGE),
+            A2AMessage::Generic(msg) => Ok(msg.clone())
         }.map_err(ser::Error::custom)?;
 
         value.serialize(serializer)
@@ -240,12 +251,12 @@ impl MessageId {
 }
 
 impl Default for MessageId {
-    #[cfg(test)]
+    #[cfg(all(test, not(feature = "aries")))]
     fn default() -> MessageId {
         MessageId::id()
     }
 
-    #[cfg(not(test))]
+    #[cfg(any(not(test), feature = "aries"))]
     fn default() -> MessageId {
         use utils::uuid;
         MessageId(uuid::uuid())
@@ -271,6 +282,7 @@ impl A2AMessage {
     const PRESENTATION: &'static str = "presentation";
     const QUERY: &'static str = "query";
     const DISCLOSE: &'static str = "disclose";
+    const BASIC_MESSAGE: &'static str = "message";
 }
 
 #[macro_export]

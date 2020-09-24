@@ -108,13 +108,15 @@ describe('IssuerCredential:', () => {
     })
 
     it('throws: incomplete data', async () => {
-      const error = await shouldThrow(async () => IssuerCredential.deserialize({ data: {
-        cred_def_id: 'Invalid',
-        credential_attributes: '{}',
-        credential_name: 'Invalid',
-        price: 'Invalid',
-        source_id: 'Invalid'
-      } } as any))
+      const error = await shouldThrow(async () => IssuerCredential.deserialize({
+        version: '1.0',
+        data: {
+          cred_def_id: 'Invalid',
+          credential_attributes: '{}',
+          credential_name: 'Invalid',
+          price: 'Invalid',
+          source_id: 'Invalid'
+        } } as any))
       assert.equal(error.vcxCode, VCXCode.INVALID_JSON)
     })
   })
@@ -156,9 +158,9 @@ describe('IssuerCredential:', () => {
     })
 
     it('can generate the offer message', async () => {
-      const connection = await connectionCreateConnect()
+      await connectionCreateConnect()
       const issuerCredential = await issuerCredentialCreate()
-      const message = await issuerCredential.getCredentialOfferMsg(connection)
+      const message = await issuerCredential.getCredentialOfferMsg()
       assert(message.length > 0)
     })
   })
@@ -179,12 +181,13 @@ describe('IssuerCredential:', () => {
     it('success', async () => {
       const connection = await connectionCreateConnect()
       const issuerCredential = await issuerCredentialCreate()
-      const offer = await issuerCredential.getCredentialOfferMsg(connection)
+      const offer = await issuerCredential.getCredentialOfferMsg()
       const cred = await Credential.create({ sourceId: 'name', offer, connection })
-      const request = await cred.getRequestMessage({ connection, payment: 0 })
+      const pwDid = await connection.getPwDid()
+      const request = await cred.getRequestMessage({ myPwDid: pwDid, payment: 0 })
       await issuerCredential.updateStateWithMessage(request)
       assert.equal(await issuerCredential.getState(), StateType.RequestReceived)
-      const credMsg = await issuerCredential.getCredentialMsg(connection)
+      const credMsg = await issuerCredential.getCredentialMsg(pwDid)
       await cred.updateStateWithMessage(credMsg)
       assert.equal(await cred.getState(), StateType.Accepted)
     })
@@ -219,7 +222,7 @@ describe('IssuerCredential:', () => {
       VCXMock.setVcxMock(VCXMockMessage.UpdateIssuerCredential)
       await issuerCredential.updateState()
       assert.equal(await issuerCredential.getState(), StateType.RequestReceived)
-      const message = await issuerCredential.getCredentialMsg(connection)
+      const message = await issuerCredential.getCredentialMsg('44x8p4HubxzUK1dwxcc5FU')
       assert(message.length > 0)
     })
   })

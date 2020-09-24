@@ -1,5 +1,3 @@
-extern crate lazy_static;
-
 #[macro_use]
 extern crate log;
 
@@ -11,12 +9,15 @@ extern crate serde_derive;
 #[macro_use]
 extern crate serde_json;
 
+#[cfg(feature = "casting_errors")]
 extern crate zmq;
 
 pub type IndyHandle = i32;
 
-pub type WalletHandle = i32;
-pub const INVALID_WALLET_HANDLE : WalletHandle = 0;
+#[repr(transparent)]
+#[derive(Debug, Hash, PartialEq, Eq, Copy, Clone, Serialize, Deserialize)]
+pub struct WalletHandle(pub i32);
+pub const INVALID_WALLET_HANDLE : WalletHandle = WalletHandle(0);
 
 pub type CallbackHandle = i32;
 
@@ -27,7 +28,16 @@ pub type CommandHandle = i32;
 pub const INVALID_COMMAND_HANDLE : CommandHandle = 0;
 
 pub type StorageHandle = i32;
+
+#[repr(transparent)]
+#[derive(Debug, Hash, PartialEq, Eq, Copy, Clone, Serialize, Deserialize)]
+pub struct SearchHandle(pub i32);
+pub const INVALID_SEARCH_HANDLE : SearchHandle = SearchHandle(0);
+
+/*
 pub type SearchHandle = i32;
+pub const INVALID_SEARCH_HANDLE : SearchHandle = 0;
+*/
 
 pub mod domain;
 
@@ -407,7 +417,7 @@ pub mod wallet {
     ///  {
     ///    retrieveType: (optional, false by default) Retrieve record type,
     ///    retrieveValue: (optional, true by default) Retrieve record value,
-    ///    retrieveTags: (optional, true by default) Retrieve record tags
+    ///    retrieveTags: (optional, false by default) Retrieve record tags
     ///  }
     /// record_handle_p: pointer to store retrieved record handle
     pub type WalletGetRecord = extern fn(storage_handle: StorageHandle,
@@ -527,14 +537,14 @@ pub mod wallet {
     ///    retrieveTotalCount: (optional, false by default) Calculate total count,
     ///    retrieveType: (optional, false by default) Retrieve record type,
     ///    retrieveValue: (optional, true by default) Retrieve record value,
-    ///    retrieveTags: (optional, true by default) Retrieve record tags,
+    ///    retrieveTags: (optional, false by default) Retrieve record tags,
     ///  }
     /// search_handle_p: pointer to store wallet search handle
     pub type WalletSearchRecords = extern fn(storage_handle: StorageHandle,
                                              type_: *const c_char,
                                              query_json: *const c_char,
                                              options_json: *const c_char,
-                                             search_handle_p: *mut SearchHandle) -> ErrorCode;
+                                             search_handle_p: *mut i32) -> ErrorCode;
 
     /// Search for all wallet storage records
     ///
@@ -542,7 +552,7 @@ pub mod wallet {
     /// storage_handle: opened storage handle (See open handler)
     /// search_handle_p: pointer to store wallet search handle
     pub type WalletSearchAllRecords = extern fn(storage_handle: StorageHandle,
-                                                search_handle_p: *mut SearchHandle) -> ErrorCode;
+                                                search_handle_p: *mut i32) -> ErrorCode;
 
     /// Get total count of records that corresponds to wallet storage search query
     ///
@@ -553,7 +563,7 @@ pub mod wallet {
     /// returns: total count of records that corresponds to wallet storage search query
     ///          Note -1 will be returned if retrieveTotalCount set to false for search_records
     pub type WalletGetSearchTotalCount = extern fn(storage_handle: StorageHandle,
-                                                   search_handle: SearchHandle,
+                                                   search_handle: i32,
                                                    total_count_p: *mut usize) -> ErrorCode;
 
     /// Get the next wallet storage record handle retrieved by this wallet search.
@@ -565,7 +575,7 @@ pub mod wallet {
     /// returns: record handle (the same as for get_record handler)
     ///          Note if no more records WalletNoRecords error will be returned
     pub type WalletFetchSearchNextRecord = extern fn(storage_handle: StorageHandle,
-                                                     search_handle: SearchHandle,
+                                                     search_handle: i32,
                                                      record_handle_p: *mut IndyHandle) -> ErrorCode;
 
     /// Free wallet search (make search handle invalid)
@@ -574,6 +584,6 @@ pub mod wallet {
     /// storage_handle: opened storage handle (See open handler)
     /// search_handle: wallet search handle (See search_records handler)
     pub type WalletFreeSearch = extern fn(storage_handle: StorageHandle,
-                                          search_handle: SearchHandle) -> ErrorCode;
+                                          search_handle: i32) -> ErrorCode;
 
 }

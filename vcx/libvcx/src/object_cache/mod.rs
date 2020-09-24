@@ -45,7 +45,7 @@ impl<T> ObjectCache<T> {
         match store.get(&handle) {
             Some(m) => match m.lock() {
                 Ok(obj) => closure(obj.deref()),
-                Err(err) => Err(VcxError::from_msg(VcxErrorKind::Common(10), "Unable to lock Object Store")) //TODO better error
+                Err(_) => Err(VcxError::from_msg(VcxErrorKind::Common(10), "Unable to lock Object Store")) //TODO better error
             },
             None => Err(VcxError::from_msg(VcxErrorKind::InvalidHandle, format!("Object not found for handle: {}", handle)))
         }
@@ -57,7 +57,7 @@ impl<T> ObjectCache<T> {
         match store.get_mut(&handle) {
             Some(m) => match m.lock() {
                 Ok(mut obj) => closure(obj.deref_mut()),
-                Err(err) => Err(VcxError::from_msg(VcxErrorKind::Common(10), "Unable to lock Object Store")) //TODO better error
+                Err(_) => Err(VcxError::from_msg(VcxErrorKind::Common(10), "Unable to lock Object Store")) //TODO better error
             },
             None => Err(VcxError::from_msg(VcxErrorKind::InvalidHandle, format!("Object not found for handle: {}", handle)))
         }
@@ -105,33 +105,42 @@ impl<T> ObjectCache<T> {
 #[cfg(test)]
 mod tests {
     use object_cache::ObjectCache;
+    use utils::devsetup::SetupDefaults;
 
     #[test]
     fn create_test() {
-        let c: ObjectCache<u32> = Default::default();
+        let _setup = SetupDefaults::init();
+
+        let _c: ObjectCache<u32> = Default::default();
     }
 
     #[test]
     fn get_closure() {
+        let _setup = SetupDefaults::init();
+
         let test: ObjectCache<u32> = Default::default();
         let handle = test.add(2222).unwrap();
         let rtn = test.get(handle, |obj| Ok(obj.clone()));
         assert_eq!(2222, rtn.unwrap())
     }
 
-
     #[test]
     fn to_string_test() {
+        let _setup = SetupDefaults::init();
+
         let test: ObjectCache<u32> = Default::default();
         let handle = test.add(2222).unwrap();
-        let string: String = test.get(handle, |obj| {
+        let string: String = test.get(handle, |_| {
             Ok(String::from("TEST"))
         }).unwrap();
 
         assert_eq!("TEST", string);
     }
 
+    #[test]
     fn mut_object_test() {
+        let _setup = SetupDefaults::init();
+
         let test: ObjectCache<String> = Default::default();
         let handle = test.add(String::from("TEST")).unwrap();
 
@@ -144,6 +153,6 @@ mod tests {
             Ok(obj.clone())
         }).unwrap();
 
-        assert_eq!("test", string);
+        assert_eq!("TEST", string);
     }
 }

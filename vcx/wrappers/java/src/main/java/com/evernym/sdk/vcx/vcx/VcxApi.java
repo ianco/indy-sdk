@@ -44,7 +44,7 @@ public class VcxApi extends VcxJava.API {
 
     public static CompletableFuture<Integer> vcxInitWithConfig(String configJson) throws VcxException {
         ParamGuard.notNullOrWhiteSpace(configJson, "config");
-        logger.debug("vcxInitWithConfig() called with: configJson = [" + configJson + "]");
+        logger.debug("vcxInitWithConfig() called with: configJson = [****]");
         CompletableFuture<Integer> future = new CompletableFuture<Integer>();
         int commandHandle = addFuture(future);
 
@@ -87,6 +87,11 @@ public class VcxApi extends VcxJava.API {
         int result = LibVcx.api.vcx_shutdown(deleteWallet);
         checkResult(result);
         return result;
+    }
+
+    public static String vcxVersion() throws VcxException {
+        logger.debug("vcxVersion()");
+        return LibVcx.api.vcx_version();
     }
 
     public static String vcxErrorCMessage(int errorCode) {

@@ -2,7 +2,7 @@ use crate::command_executor::{Command, CommandContext, CommandMetadata, CommandP
 use crate::commands::*;
 use crate::utils::table::print_list_table;
 
-use indy::ErrorCode;
+use indy::{WalletHandle, PoolHandle, ErrorCode};
 
 use crate::libindy::did::Did;
 use crate::libindy::ledger::Ledger;
@@ -386,7 +386,7 @@ pub mod rotate_key_command {
     }
 }
 
-fn _get_current_verkey(pool_handle: i32, pool_name: &str, wallet_handle: i32, wallet_name: &str, did: &str) -> Result<Option<String>, ()> {
+fn _get_current_verkey(pool_handle: PoolHandle, pool_name: &str, wallet_handle: WalletHandle, wallet_name: &str, did: &str) -> Result<Option<String>, ()> {
     //TODO: There nym is requested. Due to freshness issues response might be stale or outdated. Something should be done with it
     let response_json = Ledger::build_get_nym_request(Some(did), did)
         .and_then(|request| Ledger::sign_and_submit_request(pool_handle, wallet_handle, did, &request))
@@ -453,8 +453,8 @@ pub mod qualify_command {
 
     command!(CommandMetadata::build("qualify", "Update DID stored in the wallet to make fully qualified, or to do other DID maintenance.")
                 .add_main_param_with_dynamic_completion("did", "Did stored in wallet", DynamicCompletionType::Did)
-                .add_main_param("method", "Method to apply to the DID.")
-                .add_example("did qualify did=VsKV7grR1BUE29mG2Fm2kX prefix=did:peer")
+                .add_required_param("method", "Method to apply to the DID.")
+                .add_example("did qualify VsKV7grR1BUE29mG2Fm2kX method=did:peer")
                 .finalize());
 
     fn execute(ctx: &CommandContext, params: &CommandParams) -> Result<(), ()> {

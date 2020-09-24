@@ -34,10 +34,11 @@ mod tests {
     use super::*;
     use serde_json;
     use utils::constants::{CREDENTIAL_REQ_STRING, CRED_REQ, CRED_REQ_META};
-
-    static TEMP_ISSUER_DID: &'static str = "4reqXeZVm7JZAffAoaNLsb";
+    use utils::devsetup::*;
 
     fn create_credential_req() -> CredentialRequest {
+        let _setup = SetupDefaults::init();
+
         ::settings::set_defaults();
         let issuer_did = ::settings::get_config_value(::settings::CONFIG_INSTITUTION_DID).unwrap();
         CredentialRequest::new(&issuer_did)
@@ -45,6 +46,8 @@ mod tests {
 
     #[test]
     fn test_credential_request_struct() {
+        let _setup = SetupDefaults::init();
+
         let req = create_credential_req();
         let issuer_did = ::settings::get_config_value(::settings::CONFIG_INSTITUTION_DID).unwrap();
         assert_eq!(req.from_did, issuer_did);
@@ -52,6 +55,8 @@ mod tests {
 
     #[test]
     fn test_serialize() {
+        let _setup = SetupDefaults::init();
+
         let cred1: CredentialRequest = serde_json::from_str(CREDENTIAL_REQ_STRING).unwrap();
         let serialized = serde_json::to_string(&cred1).unwrap();
         assert_eq!(serialized, CREDENTIAL_REQ_STRING)
@@ -59,13 +64,16 @@ mod tests {
 
     #[test]
     fn test_deserialize() {
-        let issuer_did = String::from("4reqXeZVm7JZAffAoaNLsb");
+        let _setup = SetupDefaults::init();
+
         let req: CredentialRequest = serde_json::from_str(CREDENTIAL_REQ_STRING).unwrap();
         assert_eq!(&req.libindy_cred_req, CRED_REQ);
     }
 
     #[test]
     fn test_create_credential_request_from_raw_message() {
+        let _setup = SetupDefaults::init();
+
         let credential_req: CredentialRequest = serde_json::from_str(CREDENTIAL_REQ_STRING).unwrap();
 
         assert_eq!(credential_req.tid, "cCanHnpFAD");

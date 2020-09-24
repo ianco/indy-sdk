@@ -33,6 +33,8 @@ typedef unsigned int vcx_bool_t;
 typedef unsigned int vcx_payment_handle_t;
 typedef unsigned int vcx_u32_t;
 typedef SInt32 VcxHandle;
+typedef const uint8_t vcx_data_t;
+typedef unsigned long long vcx_u64_t;
 
 typedef struct
 {
@@ -66,8 +68,12 @@ vcx_error_t vcx_init(vcx_command_handle_t handle, const char *config_path, void 
 vcx_error_t vcx_create_agent(vcx_command_handle_t handle, const char *config, void (*cb)(vcx_command_handle_t xhandle, vcx_error_t err, const char *xconfig));
 vcx_error_t vcx_update_agent_info(vcx_command_handle_t handle, const char *info, void (*cb)(vcx_command_handle_t xhandle, vcx_error_t err));
 
+vcx_error_t vcx_update_webhook_url(const char *notification_webhook_url);
+
 const char *vcx_error_c_message(int);
 const char *vcx_version();
+
+vcx_error_t vcx_get_current_error(const char ** error_json_p);
 
 /**
  * Schema object
@@ -149,6 +155,41 @@ vcx_error_t vcx_connection_create_with_invite(vcx_command_handle_t command_handl
 /** Deletes a connection, send an API call to agency to stop sending messages from this connection */
 vcx_error_t vcx_connection_delete_connection(vcx_command_handle_t command_handle, vcx_connection_handle_t connection_handle, void (*cb)(vcx_command_handle_t, vcx_error_t err));
 
+/** Retrieves pw_did from Connection object. */
+vcx_error_t vcx_connection_get_pw_did(vcx_command_handle_t command_handle, vcx_connection_handle_t connection_handle, void (*cb)(vcx_command_handle_t xcommand_handle, vcx_error_t err, const char *pw_did));
+
+/** Retrieves their_pw_did from Connection object. */
+vcx_error_t vcx_connection_get_their_pw_did(vcx_command_handle_t command_handle, vcx_connection_handle_t connection_handle, void (*cb)(vcx_command_handle_t xcommand_handle, vcx_error_t err, const char *their_pw_did));
+
+/** Send a message to the specified connection
+///
+/// #params
+///
+/// command_handle: command handle to map callback to user context.
+///
+/// connection_handle: connection to receive the message
+///
+/// msg: actual message to send
+///
+/// send_message_options: config options json string that contains following options
+///     {
+///         msg_type: String, // type of message to send
+///         msg_title: String, // message title (user notification)
+///         ref_msg_id: Option<String>, // If responding to a message, id of the message
+///     }
+///
+///
+/// cb: Callback that provides array of matching messages retrieved
+///
+/// #Returns
+/// Error code as a u32
+ */
+vcx_error_t vcx_connection_send_message(vcx_command_handle_t command_handle,
+                                        vcx_connection_handle_t connection_handle,
+                                        const char *msg,
+                                        const char *send_message_options,
+                                        void (*cb)(vcx_command_handle_t xcommand_handle, vcx_error_t err, const char *msg_id));
+
 /** Generate a signature for the specified data */
 vcx_error_t vcx_connection_sign_data(vcx_command_handle_t command_handle, vcx_connection_handle_t connection_handle, uint8_t const* data_raw, unsigned int data_len, void (*cb)(vcx_command_handle_t, vcx_error_t err, uint8_t const* signature_raw, unsigned int signature_len));
 
@@ -202,7 +243,7 @@ vcx_error_t vcx_issuer_accept_credential(vcx_credential_handle_t credential_hand
 
 /** Creates a proof object.  Populates a handle to the new proof. */
 vcx_error_t vcx_proof_create(vcx_command_handle_t command_handle, const char *source_id, const char *requested_attrs, const char *requested_predicates, const char *name, void (*cb)(vcx_command_handle_t command_handle, vcx_error_t err, vcx_proof_handle_t proof_handle));
-    
+
 /** Asynchronously send a proof request to the connection. */
 vcx_error_t vcx_proof_send_request(vcx_command_handle_t command_handle, vcx_proof_handle_t proof_handle, vcx_connection_handle_t connection_handle, void (*cb)(vcx_command_handle_t xcommand_handle, vcx_error_t err));
 
@@ -242,11 +283,26 @@ vcx_error_t vcx_disclosed_proof_create_with_msgid(vcx_command_handle_t command_h
 /** Asynchronously send a proof to the connection. */
 vcx_error_t vcx_disclosed_proof_send_proof(vcx_command_handle_t command_handle, vcx_proof_handle_t proof_handle, vcx_connection_handle_t connection_handle, void (*cb)(vcx_command_handle_t xcommand_handle, vcx_error_t err));
 
+/** Asynchronously send reject of a proof to the connection. */
+vcx_error_t vcx_disclosed_proof_reject_proof(vcx_command_handle_t command_handle, vcx_proof_handle_t proof_handle, vcx_connection_handle_t connection_handle, void (*cb)(vcx_command_handle_t xcommand_handle, vcx_error_t err));
+
+/** Get proof msg */
+vcx_error_t vcx_disclosed_proof_get_proof_msg(vcx_command_handle_t command_handle, vcx_proof_handle_t proof_handle, void (*cb)(vcx_command_handle_t xcommand_handle, vcx_error_t err, const char *msg));
+
+/** Get proof reject msg */
+vcx_error_t vcx_disclosed_proof_get_reject_msg(vcx_command_handle_t command_handle, vcx_proof_handle_t proof_handle, void (*cb)(vcx_command_handle_t xcommand_handle, vcx_error_t err, const char *msg));
+
+/** Asynchronously redirect a connection. */
+vcx_error_t vcx_connection_redirect(vcx_command_handle_t command_handle, vcx_connection_handle_t connection_handle, vcx_connection_handle_t redirect_connection_handle, void (*cb)(vcx_command_handle_t xcommand_handle, vcx_error_t err));
+
+/** Get redirect details. */
+vcx_error_t vcx_connection_get_redirect_details(vcx_command_handle_t command_handle, vcx_connection_handle_t connection_handle, void (*cb)(vcx_command_handle_t xcommand_handle, vcx_error_t err, const char *details));
+
 /** Populates status with the current state of this disclosed_proof request. */
 vcx_error_t vcx_disclosed_proof_update_state(vcx_command_handle_t command_handle, vcx_proof_handle_t proof_handle, void (*cb)(vcx_command_handle_t xcommand_handle, vcx_error_t err, vcx_state_t state));
 
 /** Check for any proof requests from the connection. */
-vcx_error_t vcx_disclosed_proof_get_requests(vcx_command_handle_t command_handle, vcx_connection_handle_t connection_handle, void (*cb)(vcx_command_handle_t xcommand_handle, vcx_error_t err, const char *offers));
+vcx_error_t vcx_disclosed_proof_get_requests(vcx_command_handle_t command_handle, vcx_connection_handle_t connection_handle, void (*cb)(vcx_command_handle_t xcommand_handle, vcx_error_t err, const char *requests));
 
 /** Retrieves the state of the disclosed_proof. */
 vcx_error_t vcx_disclosed_proof_get_state(vcx_command_handle_t command_handle, vcx_proof_handle_t proof_handle, void (*cb)(vcx_command_handle_t xcommand_handle, vcx_error_t err, vcx_state_t state));
@@ -259,10 +315,10 @@ vcx_error_t vcx_disclosed_proof_deserialize(vcx_command_handle_t command_handle,
 
 /** Takes the disclosed proof object and returns a json string of all credentials matching associated proof request from wallet */
 vcx_error_t vcx_disclosed_proof_retrieve_credentials(vcx_command_handle_t command_handle, vcx_proof_handle_t proof_handle, void (*cb)(vcx_command_handle_t xcommand_handle, vcx_error_t err, const char *matching_credentials));
-    
+
 /** Takes the disclosed proof object and generates a proof from the selected credentials and self attested attributes */
 vcx_error_t vcx_disclosed_proof_generate_proof(vcx_command_handle_t command_handle, vcx_proof_handle_t proof_handle, const char *selected_credentials, const char *self_attested_attrs, void (*cb)(vcx_command_handle_t xcommand_handle, vcx_error_t err));
-    
+
 /** Releases the disclosed_proof from memory. */
 vcx_error_t vcx_disclosed_proof_release(vcx_proof_handle_t proof_handle);
 
@@ -325,14 +381,14 @@ vcx_error_t vcx_wallet_delete_record(vcx_command_handle_t chandle, const char * 
 
 /** Update a record in wallet if it is already added */
 vcx_error_t vcx_wallet_update_record_value(vcx_command_handle_t chandle, const char *type_, const char *record_id, const char *record_value, void (*cb)(vcx_command_handle_t xhandle, vcx_error_t err));
-    
+
 /**
  * token object
  */
 
 /** Create payment address for using tokens */
 vcx_error_t vcx_wallet_create_payment_address(vcx_command_handle_t chandle, const char *seed, void (*cb)(vcx_command_handle_t xhandle, vcx_error_t err, const char *address));
-    
+
 /** Get wallet token info which contains balance and addresses */
 vcx_error_t vcx_wallet_get_token_info(vcx_command_handle_t chandle, vcx_payment_handle_t payment_handle, void (*cb)(vcx_command_handle_t xhandle, vcx_error_t err, const char *token_info));
 
@@ -342,8 +398,11 @@ vcx_error_t vcx_wallet_send_tokens(vcx_command_handle_t chandle, vcx_payment_han
 /** Shutdown vcx wallet */
 vcx_error_t vcx_shutdown(vcx_bool_t deleteWallet);
 
-/** Get Messages of given status */
+/** Get Messages (Connections) of given status */
 vcx_error_t vcx_messages_download( vcx_command_handle_t command_handle, const char *message_status, const char *uids, const char *pw_dids, void(*cb)(vcx_command_handle_t xhandle, vcx_error_t err, const char *messages));
+
+/** Get Messages (Cloud Agent) of given status */
+vcx_error_t vcx_download_agent_messages( vcx_command_handle_t command_handle, const char *message_status, const char *uids, void(*cb)(vcx_command_handle_t xhandle, vcx_error_t err, const char *messages));
 
 /** Update Message status */
 vcx_error_t vcx_messages_update_status( vcx_command_handle_t command_handle, const char *message_status, const char *msg_json, void(*cb)(vcx_command_handle_t xhandle, vcx_error_t err));
@@ -370,6 +429,35 @@ vcx_error_t vcx_set_logger( const void* context,
                                           const char* file,
                                           vcx_u32_t line),
                             void (*flushFn)(const void*  context));
+
+/// Retrieve author agreement set on the Ledger
+///
+/// #params
+///
+/// command_handle: command handle to map callback to user context.
+///
+/// cb: Callback that provides array of matching messages retrieved
+///
+/// #Returns
+/// Error code as a u32
+vcx_error_t vcx_get_ledger_author_agreement(vcx_u32_t command_handle,
+                                            void (*cb)(vcx_command_handle_t, vcx_error_t, const char*));
+
+/// Set some accepted agreement as active.
+///
+/// As result of succesfull call of this funciton appropriate metadata will be appended to each write request by `indy_append_txn_author_agreement_meta_to_request` libindy call.
+///
+/// #Params
+/// text and version - (optional) raw data about TAA from ledger.
+///     These parameters should be passed together.
+///     These parameters are required if hash parameter is ommited.
+/// hash - (optional) hash on text and version. This parameter is required if text and version parameters are ommited.
+/// acc_mech_type - mechanism how user has accepted the TAA
+/// time_of_acceptance - UTC timestamp when user has accepted the TAA
+///
+/// #Returns
+/// Error code as a u32
+vcx_error_t vcx_set_active_txn_author_agreement_meta(const char *text, const char *version, const char *hash, const char *acc_mech_type, vcx_u64_t type_);
 
 /** For testing purposes only */
 void vcx_set_next_agency_response(int);

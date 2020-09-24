@@ -39,12 +39,12 @@ RUN pip3 install -U \
 	deb-pkg-tools
 
 RUN cd /tmp && \
-   curl https://download.libsodium.org/libsodium/releases/old/unsupported/libsodium-1.0.14.tar.gz | tar -xz && \
-    cd /tmp/libsodium-1.0.14 && \
-    ./configure --disable-shared && \
+   curl https://download.libsodium.org/libsodium/releases/libsodium-1.0.18.tar.gz | tar -xz && \
+    cd /tmp/libsodium-1.0.18 && \
+    ./configure && \
     make && \
     make install && \
-    rm -rf /tmp/libsodium-1.0.14
+    rm -rf /tmp/libsodium-1.0.18
 
 RUN apt-get update && apt-get install openjdk-8-jdk -y
 ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64
@@ -62,11 +62,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN useradd -ms /bin/bash -u $uid indy
 USER indy
 
-RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain 1.39.0
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain 1.46.0
 ENV PATH /home/indy/.cargo/bin:$PATH
 
-# Install clippy to the Rust toolchain
-RUN rustup component add clippy
+RUN cargo install cargo-deb
 
 EXPOSE 8080
 

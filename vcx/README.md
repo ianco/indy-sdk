@@ -157,19 +157,25 @@ To build libvcx on your own you can follow these steps --
        If this seems too messy to you, it is recommended that ${HOME}/.cargo be removed entirely (as if you never followed install instructions found at https://www.rust-lang.org/install.html) and build/install rust and cargo from source. To build and install cargo from source, follow instructions found at: https://github.com/rust-lang/cargo
 
 ### Android
-1) Install rust and rustup (https://www.rust-lang.org/install.html).
-2) Clone this repo to your local machine.
-3) Install libindy (https://repo.evernym.com/libindy/).
-    - As of now there is no distribution channel for Android for LibIndy. You have to build it manually.
-    - Copy generated `libindy.a` file to whatever location you want
-    - Set env variable `LIBINDY_DIR=<Directory_containing_libindy.a>`. e.g `export LIBINDY_DIR=/usr/local/aarch64-linux-android/libindy` libindy directory holds libindy.a
-4) Run `install_toolchains.sh`. You need to run this once to setup toolchains for android
-5) Run `android.build.sh aarm64` to build libvcx for aarm64 architecture.(Other architerctures will follow soon)
-6) Tests are not working on Android as of now.
+1. Go to `https://repo.sovrin.org/android/libvcx/{release-channel}`.
+2. Download the latest version of libvcx.
+3. Unzip archives to the directory where you want to save working library.
+4. After unzip you will get next structure of files:
+
+* `Your working directory`
+    * `include` - contains c-header files which contains all necessary declarations that may be need for your applications.
+        * `...`
+    * `lib` - contains library binaries (static and dynamic).
+        * `libvcx.a`
+        * `libvcx.so`
+    
+Copy `libvcx.so` file to the jniLibs/{abi} folder of your android project
+    
+{release channel} must be replaced with master, rc or stable to define corresponded release channel.
 
 ## How to build VCX from source
 
-## Linux 
+### Linux 
 1) Install rust and rustup (https://www.rust-lang.org/install.html). 
 2) [Install Libindy](../README.md#installing-the-sdk) 
 3) Optionally [install Libnullpay](../libnullpay/README.md) to include payment functionality.
@@ -180,6 +186,14 @@ To build libvcx on your own you can follow these steps --
     $ cargo test 
     ``` 
 5) Currently developers are using intellij for IDE development (https://www.jetbrains.com/idea/download/) with the rust plugin (https://plugins.jetbrains.com/plugin/8182-rust). 
+
+### Android
+1) Install rust and rustup (https://www.rust-lang.org/install.html).
+2) Clone this repo to your local machine.
+3) [Install Libindy](../README.md#installing-the-sdk) 
+4) Run `install_toolchains.sh`. You need to run this once to setup toolchains for android
+5) Run `android.build.sh aarm64` to build libvcx for aarm64 architecture.(Other architerctures will follow soon)
+6) Tests are not working on Android as of now.
  
 ## Wrappers documentation
 
@@ -190,11 +204,69 @@ The following wrappers are tested and complete.
 * [iOS](wrappers/ios/README.md)
 * [NodeJS](wrappers/node/README.md)
 
+## Library initialization
+Libvcx library must be initialized with one of the functions:
+* `vcx_init_with_config` -  initializes with <configuration> passed as JSON string. 
+* `vcx_init` -  initializes with a path to the file containing <configuration>. 
+* `vcx_init_minimal` - initializes with the minimal <configuration> (without any agency configuration).
+
+Each library function will use this <configuration> data after the initialization. 
+The list of options can be find [here](../docs/configuration.md#vcx)
+An example of <configuration> file can be found [here](../vcx/libvcx/sample_config/config.json)
+
+If the library works with an agency `vcx_agent_provision` function must be called before initialization to populate configuration and wallet for this agent.
+The result of this function is <configuration> JSON which can be extended and used for initialization.
+
+To change <configuration> a user must call `vcx_shutdown` and then call initialization function again.
+
 ## Getting started guide
 [The tutorial](docs/getting-started/getting-started.md) which introduces Libvcx and explains how the whole ecosystem works, and how the functions in the SDK can be used to construct rich clients.
 
 ### Example use
 For the main workflow example check [demo](https://github.com/hyperledger/indy-sdk/tree/master/vcx/wrappers/python3/demo).
+
+## Actors
+Libvcx provides APIs for acting as different actors.
+The actor states, transitions and messages depend on communication method is used.
+
+There are two communication methods: `proprietary` and `aries`. The default communication method is `proprietary`.
+The communication method can be specified as a config option on one of *_init functions.
+
+* Connection:
+    * Inviter
+        * [API](https://github.com/hyperledger/indy-sdk/tree/master/vcx/libvcx/api/connection.rs) 
+        * State diagram
+            * [proprietary](docs/states/proprietary/connection-inviter.puml) 
+            * [aries](docs/states/aries/connection-inviter.puml) 
+    * Invitee
+        * [API](https://github.com/hyperledger/indy-sdk/tree/master/vcx/libvcx/api/connection.rs) 
+        * State diagram
+            * [proprietary](docs/states/proprietary/connection-invitee.puml) 
+            * [aries](docs/states/aries/connection-invitee.puml) 
+
+* Credential Issuance:
+    * Issuer
+        * [API](https://github.com/hyperledger/indy-sdk/tree/master/vcx/libvcx/api/issuer_credential.rs) 
+        * State diagram
+            * [proprietary](docs/states/proprietary/issuer-credential.puml) 
+            * [aries](docs/states/aries/issuer-credential.puml) 
+    * Holder
+        * [API](https://github.com/hyperledger/indy-sdk/tree/master/vcx/libvcx/api/credential.rs) 
+        * State diagram
+            * [proprietary](docs/states/proprietary/credential.puml) 
+            * [aries](docs/states/aries/credential.puml) 
+
+* Credential Presentation:
+    * Verifier
+        * [API](https://github.com/hyperledger/indy-sdk/tree/master/vcx/libvcx/api/proof.rs) 
+        * State diagram
+            * [proprietary](docs/states/proprietary/proof.puml) 
+            * [aries](docs/states/aries/proof.puml) 
+    * Prover
+        * [API](https://github.com/hyperledger/indy-sdk/tree/master/vcx/libvcx/api/disclosed_proof.rs) 
+        * State diagram
+            * [proprietary](docs/states/proprietary/disclosed-proof.puml) 
+            * [aries](docs/states/aries/disclosed-proof.puml) 
 
 ## How to migrate
 The documents that provide necessary information for Libvcx migrations.
@@ -203,3 +275,6 @@ The documents that provide necessary information for Libvcx migrations.
 * [v0.2.x → v0.3.0](docs/migration-guide-0.2.x-0.3.0.md)
 * [v0.3.x → v0.4.0](docs/migration-guide-0.3.x-0.4.0.md)
 * [v0.4.x → v0.5.0](docs/migration-guide-0.4.x-0.5.0.md)
+* [v0.5.x → v0.6.0](docs/migration-guide-0.5.x-0.6.0.md)
+* [v0.6.x → v0.7.0](docs/migration-guide-0.6.x-0.7.0.md)
+* [v0.7.x → v0.8.0](docs/migration-guide-0.7.x-0.8.0.md)

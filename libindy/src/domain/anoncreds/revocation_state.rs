@@ -1,13 +1,9 @@
 use ursa::cl::{Witness, RevocationRegistry};
 use std::collections::HashMap;
 
-use named_type::NamedType;
-
 use indy_api_types::validation::Validatable;
 
-use super::revocation_registry_definition::RevocationRegistryId;
-
-#[derive(Clone, Debug, Serialize, Deserialize, NamedType)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RevocationState {
     pub witness: Witness,
     pub rev_reg: RevocationRegistry,
@@ -23,4 +19,4 @@ impl Validatable for RevocationState {
     }
 }
 
-pub type RevocationStates = HashMap<RevocationRegistryId, HashMap<u64, RevocationState>>;
+pub type RevocationStates = HashMap<String, HashMap<u64, RevocationState>>;

@@ -1,6 +1,4 @@
 #![cfg_attr(feature = "fatal_warnings", deny(warnings))]
-#![allow(unused_variables)]
-#![allow(dead_code)]
 #![crate_name = "vcx"]
 //this is needed for some large json macro invocations
 #![recursion_limit = "128"]
@@ -14,7 +12,6 @@ extern crate futures;
 
 #[macro_use]
 extern crate log;
-extern crate log4rs;
 
 extern crate libc;
 
@@ -36,12 +33,15 @@ extern crate uuid;
 extern crate failure;
 
 extern crate rmp_serde;
+extern crate indy_sys;
 
 extern crate base64;
 
 extern crate strum;
 #[macro_use]
 extern crate strum_macros;
+
+extern crate chrono;
 
 #[macro_use]
 pub mod utils;
@@ -56,7 +56,6 @@ pub mod credential_request;
 pub mod proof;
 pub mod schema;
 pub mod credential_def;
-pub mod proof_compliance;
 pub mod error;
 pub mod credential;
 pub mod object_cache;
@@ -65,6 +64,7 @@ pub mod disclosed_proof;
 pub mod v3;
 
 #[allow(unused_imports)]
+#[allow(dead_code)]
 #[cfg(test)]
 mod tests {
 
@@ -82,21 +82,22 @@ mod tests {
     use std::thread;
     use std::time::Duration;
     use utils::{
-        devsetup::tests::{set_institution, set_consumer},
+        devsetup::{set_institution, set_consumer},
         constants::{DEFAULT_SCHEMA_ATTRS, TEST_TAILS_FILE},
         get_temp_dir_path
     };
+    use utils::devsetup::*;
 
     #[cfg(feature = "agency")]
     #[cfg(feature = "pool_tests")]
     #[test]
     fn test_delete_connection() {
-        init!("agency");
+        let _setup = SetupLibraryAgencyV1ZeroFees::init();
+
         let alice = connection::create_connection("alice").unwrap();
         connection::connect(alice, None).unwrap();
         connection::delete_connection(alice).unwrap();
         assert!(connection::release(alice).is_err());
-        teardown!("agency");
     }
 
 
@@ -196,7 +197,7 @@ mod tests {
         issuer_credential::send_credential(issuer_handle, connection).unwrap();
         thread::sleep(Duration::from_millis(2000));
         // AS CONSUMER STORE CREDENTIAL
-        tests::set_consumer();
+        ::utils::devsetup::set_consumer();
         credential::update_state(credential_handle, None).unwrap();
         thread::sleep(Duration::from_millis(2000));
         println!("storing credential");
@@ -245,11 +246,11 @@ mod tests {
         let (address1, address2, city, state, zip) = attr_names();
         json!({
                "attrs":{
-                  address1.to_string():{"credential": matching_credentials["attrs"][address1][0], "tails_file": get_temp_dir_path(Some(TEST_TAILS_FILE)).to_str().unwrap().to_string()},
-                  address2.to_string():{"credential": matching_credentials["attrs"][address2][0], "tails_file": get_temp_dir_path(Some(TEST_TAILS_FILE)).to_str().unwrap().to_string()},
-                  city.to_string():{"credential": matching_credentials["attrs"][city][0], "tails_file": get_temp_dir_path(Some(TEST_TAILS_FILE)).to_str().unwrap().to_string()},
-                  state.to_string():{"credential": matching_credentials["attrs"][state][0], "tails_file": get_temp_dir_path(Some(TEST_TAILS_FILE)).to_str().unwrap().to_string()},
-                  zip.to_string():{"credential": matching_credentials["attrs"][zip][0], "tails_file": get_temp_dir_path(Some(TEST_TAILS_FILE)).to_str().unwrap().to_string()},
+                  address1.to_string():{"credential": matching_credentials["attrs"][address1][0], "tails_file": get_temp_dir_path(TEST_TAILS_FILE).to_str().unwrap().to_string()},
+                  address2.to_string():{"credential": matching_credentials["attrs"][address2][0], "tails_file": get_temp_dir_path(TEST_TAILS_FILE).to_str().unwrap().to_string()},
+                  city.to_string():{"credential": matching_credentials["attrs"][city][0], "tails_file": get_temp_dir_path(TEST_TAILS_FILE).to_str().unwrap().to_string()},
+                  state.to_string():{"credential": matching_credentials["attrs"][state][0], "tails_file": get_temp_dir_path(TEST_TAILS_FILE).to_str().unwrap().to_string()},
+                  zip.to_string():{"credential": matching_credentials["attrs"][zip][0], "tails_file": get_temp_dir_path(TEST_TAILS_FILE).to_str().unwrap().to_string()},
                },
                "predicates":{
                }
@@ -279,7 +280,7 @@ mod tests {
             attrs_list.as_array_mut().unwrap().push(json!(format!("key{}",i)));
         }
         let attrs_list = attrs_list.to_string();
-        let (schema_id, schema_json, cred_def_id, cred_def_json, cred_def_handle, _) = ::utils::libindy::anoncreds::tests::create_and_store_credential_def(&attrs_list, false);
+        let (schema_id, _schema_json, cred_def_id, _cred_def_json, cred_def_handle, _) = ::utils::libindy::anoncreds::tests::create_and_store_credential_def(&attrs_list, false);
         let mut credential_data = json!({});
         for i in 1..number_of_attributes {
             credential_data[format!("key{}", i)] = json!([format!("value{}",i)]);
@@ -294,7 +295,7 @@ mod tests {
         send_credential(credential_offer, alice, credential);
 
         // AS INSTITUTION SEND PROOF REQUEST
-        tests::set_institution();
+        ::utils::devsetup::set_institution();
 
         let restrictions = json!({ "issuer_did": institution_did, "schema_id": schema_id, "cred_def_id": cred_def_id, });
         let mut attrs: Value = serde_json::Value::Array(vec![]);
@@ -312,7 +313,7 @@ mod tests {
         for i in 1..number_of_attributes {
             credentials["attrs"][format!("key{}", i)] = json!({
                 "credential": matching_credentials["attrs"][format!("key{}",i)][0].clone(),
-                "tails_file": get_temp_dir_path(Some(TEST_TAILS_FILE)).to_str().unwrap().to_string(),
+                "tails_file": get_temp_dir_path(TEST_TAILS_FILE).to_str().unwrap().to_string(),
             });
         };
         generate_and_send_proof(proof_handle, faber, credentials);
@@ -328,26 +329,24 @@ mod tests {
     #[cfg(feature = "pool_tests")]
     #[test]
     fn test_real_proof() {
-        init!("agency");
+        let _setup = SetupLibraryAgencyV1ZeroFees::init();
 
         _real_proof_demo();
-
-        teardown!("agency");
     }
 
     #[cfg(feature = "agency")]
     #[cfg(feature = "pool_tests")]
     #[test]
     fn test_real_proof_with_revocation() {
-        let number_of_attributes = 10;
-        init!("agency");
+        let _setup = SetupLibraryAgencyV1ZeroFees::init();
+
         let institution_did = settings::get_config_value(settings::CONFIG_INSTITUTION_DID).unwrap();
         let (faber, alice) = ::connection::tests::create_connected_connections();
 
         // CREATE SCHEMA AND CRED DEF
         println!("creating schema/credential_def and paying fees");
         let attrs_list = json!(["address1", "address2", "city", "state", "zip"]).to_string();
-        let (schema_id, schema_json, cred_def_id, cred_def_json, cred_def_handle, rev_reg_id) =
+        let (schema_id, _schema_json, cred_def_id, _cred_def_json, cred_def_handle, rev_reg_id) =
             ::utils::libindy::anoncreds::tests::create_and_store_credential_def(&attrs_list, true);
 
         // AS INSTITUTION SEND CREDENTIAL OFFER
@@ -362,7 +361,7 @@ mod tests {
         send_credential(credential_offer, alice, credential);
 
         // AS INSTITUTION SEND PROOF REQUEST
-        tests::set_institution();
+        ::utils::devsetup::set_institution();
 
         let time_before_revocation = time::get_time().sec as u64;
         let mut _requested_attrs = requested_attrs(&institution_did, &schema_id, &cred_def_id, None, Some(time_before_revocation));
@@ -378,7 +377,7 @@ mod tests {
         proof::update_state(proof_req_handle, None).unwrap();
         assert_eq!(proof::get_proof_state(proof_req_handle).unwrap(), ProofStateType::ProofValidated as u32);
         println!("proof validated!");
-        let wallet = ::utils::libindy::payments::get_wallet_token_info().unwrap();
+        let _wallet = ::utils::libindy::payments::get_wallet_token_info().unwrap();
 
         // AS INSTITUTION REVOKE CRED
         revoke_credential(credential_offer, rev_reg_id);
@@ -415,18 +414,14 @@ mod tests {
         proof::update_state(proof_req_handle3, None).unwrap();
         assert_eq!(proof::get_proof_state(proof_req_handle3).unwrap(), ProofStateType::ProofValidated as u32);
         println!("proof valid for specified interval!");
-
-        teardown!("agency");
     }
 
     #[cfg(feature = "pool_tests")]
     #[cfg(feature = "agency_v2")]
     #[test]
     fn test_real_proof_for_protocol_type_v2() {
-        init!("agency_2_0");
+        let _setup = SetupLibraryAgencyV2::init();
 
         _real_proof_demo();
-
-        teardown!("agency");
     }
 }

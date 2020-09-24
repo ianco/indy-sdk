@@ -76,6 +76,8 @@ enum_number!(VcxStateType
     VcxStateUnfulfilled = 5,
     VcxStateExpired = 6,
     VcxStateRevoked = 7,
+    VcxStateRedirected = 8,
+    VcxStateRejected = 9,
 });
 
 impl VcxStateType {
@@ -113,6 +115,12 @@ enum_number!(PublicEntityStateType
 impl Default for PublicEntityStateType{
     fn default() -> Self {
         PublicEntityStateType::Published
+    }
+}
+
+impl Default for VcxStateType{
+    fn default() -> Self {
+        VcxStateType::VcxStateNone
     }
 }
 
