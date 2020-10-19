@@ -56,6 +56,7 @@ fn operator_to_sql<'a>(op: &'a Operator, arguments: &mut Vec<&'a dyn ToSql>) -> 
         Operator::And(ref suboperators) => and_to_sql(suboperators, arguments),
         Operator::Or(ref suboperators) => or_to_sql(suboperators, arguments),
         Operator::Not(ref suboperator) => not_to_sql(suboperator, arguments),
+        Operator::Native(ref sql) => Ok(sql.clone()),
     }
 }
 

@@ -75,6 +75,7 @@ pub enum Operator {
     Lte(TagName, TargetValue),
     Like(TagName, TargetValue),
     In(TagName, Vec<TargetValue>),
+    Native(String,),
 }
 
 
@@ -159,6 +160,7 @@ impl string::ToString for Operator {
                 } else { "{}".to_string() }
             },
             Operator::Not(ref stmt) => format!(r#"{{"$not":{}}}"#, stmt.to_string()),
+            Operator::Native(ref sql) => format!(r#"{{"$native":"{}"}}"#, sql.to_string()),
         }
     }
 }
@@ -230,6 +232,10 @@ fn parse_operator(key: String, value: serde_json::Value, encrypted: bool) -> Res
             Ok(Operator::Not(Box::new(operator)))
         }
         ("$not", _) => Err(WalletQueryError::StructureErr("$not must be JSON object".to_string())),
+        ("$native", serde_json::Value::String(sql)) => {
+            Ok(Operator::Native(sql))
+        },
+        ("$native", _) => Err(WalletQueryError::ValueErr("$native must be used with string".to_string())),
         (_, serde_json::Value::String(value)) => {
             let target_name = _build_target_name(&key, encrypted);
             let target_value = _build_target_value(&target_name, &value, encrypted);
@@ -434,6 +440,18 @@ mod tests {
         let json2 = encrypted_query.to_string();
         let query2 = parse_from_json_encrypted(&json2).unwrap();
         assert_eq!(encrypted_query, query2);
+    }
+
+    #[test]
+    fn test_simple_json_parse_native_sql() {
+        let json = r#"{"$native":"offset 0 limit 1000 order by id"}"#;
+        let query = parse_from_json(json).unwrap();
+        let json2 = query.to_string();
+        let _query2 = parse_from_json(&json2).unwrap();
+        //assert_eq!(query, query2);
+        assert_eq!(json, json2);
+        //let expected = Operator::Native("offset 0 limit 1000 order by id".to_string());
+        //assert_eq!(query, expected);
     }
 
     #[test]
