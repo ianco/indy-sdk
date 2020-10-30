@@ -18,6 +18,7 @@ pub enum Query {
     Lte(String, String),
     Like(String, String),
     In(String, Vec<String>),
+    Native(String,),
 }
 
 impl Serialize for Query {
@@ -150,6 +151,7 @@ impl Query {
                 }
             }
             Query::Not(ref stmt) => json!({"$not": stmt.to_value()}),
+            Query::Native(ref sql) => json!({"$native": sql.to_string()}),
         }
     }
 }
@@ -203,6 +205,10 @@ fn parse_operator(key: String, value: serde_json::Value) -> Result<Option<Query>
             Ok(Some(Query::Not(Box::new(operator))))
         }
         ("$not", _) => Err("$not must be JSON object"),
+        ("$native", serde_json::Value::String(sql)) => {
+            Ok(Some(Query::Native(sql)))
+        },
+        ("$native", _) => Err("$native must be used with string"),
         (_, serde_json::Value::String(value)) => {
             Ok(Some(Query::Eq(key, value)))
         }

@@ -1,6 +1,8 @@
 use std::io;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::time::{SystemTime, UNIX_EPOCH};
+//use std::fs::File;
+use std::fs::OpenOptions;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use rmp_serde;
@@ -112,27 +114,66 @@ pub(super) fn export_continue(wallet: &Wallet, writer: &mut dyn Write, version: 
 
     writer.write_all(&hash(&header)?)?;
 
-    let mut records = wallet.get_all()?;
+    //let mut records = wallet.get_all()?;
+    //let write_txtfile = File::create("/tmp/export-wallet-cred-ids.txt").unwrap();
+    let write_txtfile = OpenOptions::new()
+        .write(true)
+        .append(true)
+        .open("/tmp/export-wallet-cred-ids.txt")
+        .unwrap();
+    let mut txt_writer = BufWriter::new(&write_txtfile);
 
-    while let Some(WalletRecord { type_, id, value, tags }) = records.next()? {
-        let record = Record {
-            type_: type_.ok_or_else(|| err_msg(IndyErrorKind::InvalidState, "No type fetched for exported record"))?,
-            id,
-            value: value.ok_or_else(|| err_msg(IndyErrorKind::InvalidState, "No value fetched for exported record"))?,
-            tags: tags.ok_or_else(|| err_msg(IndyErrorKind::InvalidState, "No tags fetched for exported record"))?,
-        };
+    let mut total_records = 0;
+    let page_size = 1000;
+    let mut page_count = 9895;
+    let mut zero_rec_page = 0;
+    loop {
+        println!("{} - {}", page_size*page_count, page_size*(page_count+1));
+        let query = format!(r#"{{"$native":"i.id > {} and i.id <= {}"}}"#,
+                            page_size*page_count, page_size*(page_count+1));
+        let mut records = wallet.search(
+            "Indy::Credential",
+            &query,
+            Some(r#"{"retrieveRecords": true, "retrieveTotalCount": true, "retrieveType": true, "retrieveValue": true, "retrieveTags": true}"#)
+        ).unwrap();
+        page_count = page_count + 1;
 
-        println!("Record: {:?} {:?} {:?}", record.type_, record.id, record.value);
+        let mut page_rec_count = 0;
+        while let Some(WalletRecord { type_, id, value, tags }) = records.next()? {
+            let record = Record {
+                type_: type_.ok_or_else(|| err_msg(IndyErrorKind::InvalidState, "No type fetched for exported record"))?,
+                id,
+                value: value.ok_or_else(|| err_msg(IndyErrorKind::InvalidState, "No value fetched for exported record"))?,
+                tags: tags.ok_or_else(|| err_msg(IndyErrorKind::InvalidState, "No tags fetched for exported record"))?,
+            };
 
-        let record = rmp_serde::to_vec(&record)
-            .to_indy(IndyErrorKind::InvalidState, "Can't serialize record")?;
+            //println!("Record: {:?} {:?} {:?}", record.type_, record.id, record.value);
+            //println!("{:?},{:?}", record.type_, record.id);
+            writeln!(&mut txt_writer, "{},{}", record.type_, record.id);
 
-        writer.write_u32::<LittleEndian>(record.len() as u32)?;
-        writer.write_all(&record)?;
+            let record = rmp_serde::to_vec(&record)
+                .to_indy(IndyErrorKind::InvalidState, "Can't serialize record")?;
+
+            //writer.write_u32::<LittleEndian>(record.len() as u32)?;
+            //writer.write_all(&record)?;
+
+            page_rec_count = page_rec_count + 1;
+            total_records = total_records + 1;
+        }
+
+        if 0 == page_rec_count {
+            zero_rec_page = zero_rec_page + 1;
+            if zero_rec_page > 20 {
+                break;
+            }
+        } else {
+            zero_rec_page = 0;
+        }
     }
 
     writer.write_u32::<LittleEndian>(0)?; // END message
     writer.flush()?;
+    txt_writer.flush()?;
     Ok(())
 }
 

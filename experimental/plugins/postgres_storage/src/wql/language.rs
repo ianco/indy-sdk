@@ -75,7 +75,7 @@ pub enum Operator {
     Lte(TagName, TargetValue),
     Like(TagName, TargetValue),
     In(TagName, Vec<TargetValue>),
-    Native(String,),
+    Native(String),
 }
 
 

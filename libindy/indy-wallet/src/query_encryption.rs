@@ -62,7 +62,8 @@ fn transform(query: Query, keys: &Keys) -> IndyResult<Operator> {
         }
         Query::And(operators) => Ok(Operator::And(transform_list_operators(operators, keys)?)),
         Query::Or(operators) => Ok(Operator::Or(transform_list_operators(operators, keys)?)),
-        Query::Not(boxed_operator) => Ok(Operator::Not(Box::new(transform(*boxed_operator, keys)?)))
+        Query::Not(boxed_operator) => Ok(Operator::Not(Box::new(transform(*boxed_operator, keys)?))),
+        Query::Native(sql) => Ok(Operator::Native(sql))
     }
 }
 

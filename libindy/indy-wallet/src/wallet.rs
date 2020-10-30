@@ -189,12 +189,19 @@ impl Wallet {
     }
 
     pub fn search<'a>(&'a self, type_: &str, query: &str, options: Option<&str>) -> IndyResult<WalletIterator> {
+        //println!("query str: {:?}", query);
+
         let parsed_query: Query = ::serde_json::from_str::<Query>(query)
             .map_err(|err| IndyError::from_msg(IndyErrorKind::WalletQueryError, err))?
             .optimise()
             .unwrap_or_default();
 
+        //println!("parsed_query: {:?}", parsed_query);
+
         let encrypted_query = encrypt_query(parsed_query, &self.keys)?;
+
+        //println!("encrypted_query: {:?}", encrypted_query);
+        
         let encrypted_type_ = encrypt_as_searchable(type_.as_bytes(), &self.keys.type_key, &self.keys.item_hmac_key);
         let storage_iterator = self.storage.search(&encrypted_type_, &encrypted_query, options)?;
         let wallet_iterator = WalletIterator::new(storage_iterator, Rc::clone(&self.keys));

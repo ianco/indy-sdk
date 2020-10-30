@@ -67,6 +67,7 @@ pub enum Operator {
     Lte(TagName, TargetValue),
     Like(TagName, TargetValue),
     In(TagName, Vec<TargetValue>),
+    Native(String),
 }
 
 impl string::ToString for Operator {
@@ -101,6 +102,7 @@ impl string::ToString for Operator {
                 } else { "{}".to_string() }
             },
             Operator::Not(ref stmt) => format!(r#"{{"$not":{}}}"#, stmt.to_string()),
+            Operator::Native(ref sql) => format!(r#"{{"$native":"{}"}}"#, sql.to_string()),
         }
     }
 }

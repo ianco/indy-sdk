@@ -317,6 +317,9 @@ fn _process_operator(restriction_op: &Query, version: &ProofRequestsVersion) -> 
         Query::Not(ref operator) => {
             _process_operator(operator, version)
         }
+        Query::Native(_) => {
+            Err("$native not allowed in proof requests".to_string())
+        }
     }
 }
 

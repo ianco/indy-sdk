@@ -1650,6 +1650,8 @@ impl WalletStorage for PostgresStorage {
     fn search(&self, type_: &[u8], query: &language::Operator, options: Option<&str>) -> Result<Box<dyn StorageIterator>, WalletStorageError> {
         let type_ = type_.to_vec(); // FIXME
 
+        //println!("Postgres search: {:?} {:?} {:?}", type_, query, options);
+
         let search_options = match options {
             None => SearchOptions::default(),
             Some(option_str) => serde_json::from_str(option_str)?
@@ -1701,6 +1703,8 @@ impl WalletStorage for PostgresStorage {
         } else { None };
 
         if search_options.retrieve_records {
+            //println!("Retrieve records");
+
             let fetch_options = RecordOptions {
                 retrieve_value: search_options.retrieve_value,
                 retrieve_tags: search_options.retrieve_tags,
@@ -1734,6 +1738,8 @@ impl WalletStorage for PostgresStorage {
                 }
                 None => query::wql_to_sql(&type_, query, options)?
             };
+
+            //println!("Postgres query_string: {:?}", query_string);
 
             let statement = self._prepare_statement(&query_string)?;
             let tag_retriever = if fetch_options.retrieve_tags {
