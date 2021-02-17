@@ -25,7 +25,7 @@ fn config(name: &str) -> String {
     json!({"id": name}).to_string()
 }
 
-mod high_cases {
+mod high_cases_wallet {
     use super::*;
 
     mod register_wallet_storage {
@@ -322,7 +322,7 @@ mod high_cases {
 }
 
 #[cfg(not(feature="only_high_cases"))]
-mod medium_cases {
+mod medium_cases_wallet {
     extern crate libc;
 
     use super::*;
