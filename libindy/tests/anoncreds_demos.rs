@@ -6,8 +6,7 @@ inject_indy_dependencies!();
 extern crate indyrs as indy;
 extern crate indyrs as api;
 
-#[cfg(not(feature = "only_high_cases"))]
-mod demos {
+mod anoncreds_demos {
     use super::*;
 
     use crate::utils::{wallet, anoncreds};

@@ -21,7 +21,7 @@ use crate::utils::domain::crypto::did::DidValue;
 
 use indy::INVALID_WALLET_HANDLE;
 
-mod high_cases {
+mod high_cases_anoncreds {
     use super::*;
 
     mod issuer_create_schema {
@@ -3800,7 +3800,7 @@ mod high_cases {
 }
 
 #[cfg(not(feature = "only_high_cases"))]
-mod medium_cases {
+mod medium_cases_anoncreds {
     use super::*;
     use std::collections::HashSet;
     use crate::utils::domain::anoncreds::schema::{AttributeNames, MAX_ATTRIBUTES_COUNT};
